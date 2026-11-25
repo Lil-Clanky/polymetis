@@ -1,5 +1,7 @@
 """The decisions themselves: pure functions of the settings, the session and the turn's search."""
 
+from __future__ import annotations
+
 import hashlib
 import re
 

@@ -1,5 +1,7 @@
 """The report: counts from the decision log, and proposals. It reads and prints; it never changes a setting."""
 
+from __future__ import annotations
+
 import datetime
 import time
 from collections import Counter, defaultdict
@@ -26,6 +28,8 @@ def _n(count: int, word: str) -> str:
 def _ablation(all_records, now: float) -> list[str]:
     recent = [r for r in all_records if now - r.get("time", 0) <= ABLATION_EVERY_DAYS * DAY]
     if any(r.get("arm") in ("normal", "ablation") for r in recent):  # one runs or ran, also with no chat in its arm yet
+        return []
+    if all(r.get("platform") == "claude-code" for r in all_records):  # an ablation is Hermes's
         return []
     first_seen: dict[str, float] = {}
     for r in sorted(all_records, key=lambda r: r.get("time", 0)):
@@ -93,7 +97,8 @@ def render(all_records, *, days: int = 30, catalogs: dict[str, list[str]] | None
     out = [f"Polymetis report, last {days} days: {_n(len(sessions), 'session')}, {_n(len(records), 'turn')}."]
 
     levels = Counter(r.get("level") or "undecided" for r in sessions.values())
-    out.append("Session levels: " + ", ".join(f"{k} {v}" for k, v in sorted(levels.items())) + ".")
+    if set(levels) != {"undecided"}:  # Claude Code has no levels
+        out.append("Session levels: " + ", ".join(f"{k} {v}" for k, v in sorted(levels.items())) + ".")
     platforms = Counter(r.get("platform") or "unknown" for r in records)
     out.append("Turns per platform: " + ", ".join(f"{k} {v}" for k, v in platforms.most_common()) + ".")
 
@@ -124,8 +129,9 @@ def render(all_records, *, days: int = 30, catalogs: dict[str, list[str]] | None
     errors = sum(r.get("tool_errors") or 0 for r in records)
     corrections = sum(bool(r.get("correction")) for r in records)
     repeats = sum(bool(r.get("repeat")) for r in records)
-    out.append("Outcomes: " + ", ".join(f"{k} {v}" for k, v in sorted(outcomes.items()))
-               + f". Tool errors: {errors}. Messages that read as a correction: {corrections}, as a repeat: {repeats}.")
+    signals = (f" Tool errors: {errors}. Messages that read as a correction: {corrections}, as a repeat: {repeats}."
+               if any("tool_errors" in r for r in records) else "")  # Hermes's hooks see these; Claude Code's do not
+    out.append("Outcomes: " + ", ".join(f"{k} {v}" for k, v in sorted(outcomes.items())) + "." + signals)
 
     names = sorted({n for names in (catalogs or {}).values() for n in names})
     if names:

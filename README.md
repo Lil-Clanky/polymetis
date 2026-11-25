@@ -1,8 +1,59 @@
 # Polymetis
 
-Polymetis is a plugin for [Hermes Agent](https://github.com/NousResearch/hermes-agent) that decides per session which of Hermes's skills a model gets. On every turn it ranks the skills in Hermes's skill index against the user's message, on this machine and without a model, and it logs what it decided. By default it changes nothing that a model gets. Two features can be turned on: a short tip that names the matching skill, and a smaller request for local models behind `polytropos-router`.
+Polymetis points an AI agent at the installed skill that fits your message. It ranks the skills against each message on your machine, with word matching and without a model, and it logs what it decided, never the message text. It works in two hosts, on its own in each:
 
-It works on its own and needs no other plugin. [Polytropos](https://github.com/Lil-Clanky/polytropos), a plugin pack for Hermes, installs it too from its first release after v0.2.1, and the pack's model router works together with it.
+- **[Claude Code](#claude-code)**: when one skill clearly fits a message, it adds a one-line tip that names that skill.
+- **[Hermes Agent](https://github.com/NousResearch/hermes-agent)**: it decides per session which of Hermes's skills a model gets. By default it changes nothing that a model gets. Two features can be turned on: a short tip that names the matching skill, and a smaller request for local models behind `polytropos-router`. [Polytropos](https://github.com/Lil-Clanky/polytropos), a plugin pack for Hermes, installs it too from its first release after v0.2.1, and the pack's model router works together with it.
+
+## Claude Code
+
+Claude Code lists every installed skill in Claude's prompt, but within a size budget: past it, skills show by name only. On a test machine with 133 skills, Claude Sonnet saw 63 of them by name only. Claude cannot tell what such a skill does, and it often answers without a skill that fits.
+
+Polymetis reads each skill's full description from its `SKILL.md` on disk and ranks the skills against your message, in about 0.1 seconds. When the best skill scores at least 7 and at least 1.5 times the next one, it adds a tip to your message, such as:
+
+> Installed skill that matches this request: engineering:deploy-checklist (Pre-deployment verification checklist. Use when about to ship a release, …). Load it with the Skill tool before you answer, unless it clearly does not fit.
+
+It names only skills that Claude Code offers in the session, each at most once per session, and it skips slash commands. The first message in a project folder that Polymetis has not seen gets no tip: Claude Code records its skill list only after that message. Nothing leaves your machine. It needs no Hermes and no other plugin.
+
+### Install
+
+In Claude Code:
+
+```
+/plugin marketplace add Lil-Clanky/polymetis
+/plugin install polymetis@polymetis
+```
+
+Claude Code 2.1.275 or later can do this in one step: `/plugin install polymetis --marketplace Lil-Clanky/polymetis`. The tips start in the next session. Polymetis needs `python3`, version 3.9 or newer; macOS and Linux have it. It is not tested on Windows, where `python3` may be missing. Remove it with `/plugin uninstall polymetis@polymetis`.
+
+### What it measured
+
+On one machine with 133 skills, Claude Code 2.1.327, on 2026-11-25:
+
+- **Tips, without a model.** Of 50 test messages that a skill fits, 23 got a tip, all naming a fitting skill. Of 12 messages that no skill fits, none got a tip. The thresholds of 7 and 1.5 were chosen on these same messages. A long message with pasted data or code gets a tip less often.
+- **What Claude did.** 14 tasks, each run twice with and twice without Polymetis, by Claude Sonnet 5.5 in an empty folder. On the 9 tasks that got a tip, Claude loaded a fitting skill in 11 of 18 runs with Polymetis and in 6 of 18 without. These runs cost about 4% more, $0.31 against $0.29.
+- **Answer quality.** Claude Opus 5.5 compared each pair of answers blind, in both orders; a side won only if both orders agreed. On the tasks with a tip, the answer with Polymetis was better 9 times, worse 5 times, and tied 4 times. On the 5 tasks without a tip, where both sides got the same input, the split was 2 against 3 with 5 ties. So the answers got somewhat better, but too few runs to call it proven.
+
+The scripts and tasks are in `evals/claude_code/`. Your own numbers come from the report below.
+
+### Report
+
+`/polymetis:report` shows the last 30 days from the log: turns, tips, and how often Claude loaded the tipped skill. The log is `decisions.jsonl` in the plugin's data folder, `~/.claude/plugins/data/polymetis-polymetis/`, with skill names, scores and outcomes per turn.
+
+### Settings
+
+Optional, in `settings.json` in that data folder, for example:
+
+```json
+{"apply": [], "min_score": 9, "block": ["some-skill"]}
+```
+
+- `apply`: `["tips"]` by default. `[]` is shadow mode: Polymetis decides and logs, but gives no tips.
+- `min_score`: the score a skill needs for a tip, 7 by default. Higher means fewer tips.
+- `block`: skills that never get a tip.
+- `log`: `false` stops the log.
+
+The other settings below are Hermes's. The rest of this README is about Hermes Agent.
 
 ## Install
 

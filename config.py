@@ -1,5 +1,8 @@
 """Polymetis settings, read from plugins.entries.polymetis.settings in the profile's config.yaml."""
 
+from __future__ import annotations
+
+import dataclasses
 import datetime
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -104,8 +107,8 @@ def _read(get: Callable[[str, Any], Any], key: str) -> Any:
         return None
 
 
-def parse_settings(get: Callable[[str, Any], Any]) -> tuple[Settings, list[str]]:
-    """Read every key through ``get(key, default)``. A bad value keeps that key's default and adds a
+def parse_settings(get: Callable[[str, Any], Any], base: Settings = Settings()) -> tuple[Settings, list[str]]:
+    """Read every key through ``get(key, default)``, over ``base``. A bad value keeps that key's default and adds a
     problem that names the key, never the value, which may hold a secret. An ablation with a problem
     does not run, because a mistyped end date or key would leave it running without an end."""
     values, problems = {}, []
@@ -123,4 +126,4 @@ def parse_settings(get: Callable[[str, Any], Any]) -> tuple[Settings, list[str]]
             problems.append(str(e))
     if any(p.startswith("ablation") for p in problems):
         values.pop("ablation_share", None)
-    return Settings(**values), problems
+    return dataclasses.replace(base, **values), problems

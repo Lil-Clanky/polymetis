@@ -1,6 +1,6 @@
 name: polymetis
 kind: standalone
-version: 0.1.0
+version: 0.2.0
 requires_hermes: ">=0.23.2"
 description: Decides per session which skills and tools a model gets, from none to Hermes's full set, and logs it
 author: Lil-Clanky

@@ -1,0 +1,16 @@
+{
+  "name": "polymetis",
+  "version": "0.2.0",
+  "description": "Points Claude at the installed skill that fits each message, from every skill's full description, and logs what it decided without message text",
+  "author": {"name": "Lil-Clanky", "url": "https://github.com/Lil-Clanky"},
+  "homepage": "https://github.com/Lil-Clanky/polymetis",
+  "repository": "https://github.com/Lil-Clanky/polymetis",
+  "license": "MIT",
+  "keywords": ["skills", "skill-router", "hooks"],
+  "hooks": {
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/claude_code_hook.py\" UserPromptSubmit", "timeout": 10}]}],
+    "PostToolUse": [{"matcher": "Skill", "hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/claude_code_hook.py\" PostToolUse", "timeout": 10}]}],
+    "Stop": [{"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/claude_code_hook.py\" Stop", "timeout": 10}]}],
+    "StopFailure": [{"hooks": [{"type": "command", "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/claude_code_hook.py\" StopFailure", "timeout": 10}]}]
+  }
+}
