@@ -7,6 +7,12 @@ from pathlib import Path
 
 MAX_BYTES = 5 * 1024 * 1024
 NAME = "decisions.jsonl"
+_TEXT = (str, type(None))
+_COUNT = (int, float, type(None))
+# the fields the report reads, with the types Polymetis writes; a hand edit or an older format may differ
+_TYPES = {"time": (int, float), "session": _TEXT, "platform": _TEXT, "level": _TEXT, "local": _TEXT,
+          "outcome": _TEXT, "tool_errors": _COUNT, "tokens_in": _COUNT, "tokens_out": _COUNT}
+_NAME_LISTS = ("answered_by", "tip", "chosen", "used_skills")
 
 
 def write(path: Path, record: dict) -> None:
@@ -19,17 +25,24 @@ def write(path: Path, record: dict) -> None:
         handle.write(json.dumps(record) + "\n")
 
 
+def _fits(record: dict) -> bool:
+    return (all(isinstance(record[k], kinds) for k, kinds in _TYPES.items() if k in record)
+            and all(isinstance(record.get(k) or [], list) and all(isinstance(n, str) for n in record.get(k) or [])
+                    for k in _NAME_LISTS))
+
+
 def read(path: Path) -> list[dict]:
-    """Every record of the log and its older file, oldest first. Lines that do not parse are skipped."""
+    """Every record of the log and its older file, oldest first. Lines that do not parse, or whose fields
+    have other types than Polymetis writes, are skipped. A file that exists but cannot be read raises OSError."""
     records = []
     for part in (path.with_name(path.name + ".1"), path):
         try:
-            lines = part.read_text(encoding="utf-8").splitlines()
-        except OSError:
+            lines = part.read_text(encoding="utf-8", errors="replace").splitlines()
+        except FileNotFoundError:
             continue
         for line in lines:
             with contextlib.suppress(ValueError):
                 record = json.loads(line)
-                if isinstance(record, dict):
+                if isinstance(record, dict) and _fits(record):
                     records.append(record)
     return records

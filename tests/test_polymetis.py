@@ -59,6 +59,41 @@ def test_a_failing_config_read_means_the_default():
     assert parse_settings(get) == (Settings(), [])
 
 
+def hermes_get(tree):
+    """A getter that walks a dotted key through nested settings, as Hermes's ctx.get_config does."""
+    def get(key, default=None):
+        node = tree
+        for part in key.split("."):
+            if not isinstance(node, dict) or part not in node:
+                return default
+            node = node[part]
+        return node
+    return get
+
+
+def test_a_nested_ablation_is_read():
+    s, problems = parse_settings(hermes_get({"ablation": {"share": 0.25, "until": "2026-12-31"}}))
+    assert problems == [] and s.ablation_share == 0.25 and s.ablation_until == datetime.date(2026, 12, 31)
+
+
+@pytest.mark.parametrize("ablation", [0.25, ["share"], {"shares": 0.25}, {"share": 0.25, "untill": "2026-12-31"}])
+def test_an_ablation_of_another_shape_is_named_and_does_not_start(ablation):
+    s, problems = parse_settings(hermes_get({"ablation": ablation}))
+    assert s == Settings() and len(problems) == 1 and problems[0].startswith("ablation:")
+
+
+def test_a_bad_end_date_does_not_start_the_ablation():
+    s, problems = settings(**{"ablation.share": 1, "ablation.until": "31-12-2026"})
+    assert s.ablation_share == 0 and not s.ablation_active()
+    assert len(problems) == 1 and problems[0].startswith("ablation.until:")
+
+
+@pytest.mark.parametrize("value", [0.5, 4.9])
+def test_max_tips_takes_whole_numbers_only(value):
+    s, problems = settings(max_tips=value)
+    assert s.max_tips == 2 and len(problems) == 1 and problems[0].startswith("max_tips:")
+
+
 # --- the skill index ---
 
 def test_parse_index_reads_rows_categories_and_names_only_lines():
@@ -336,6 +371,17 @@ def rec(t, **kw):
 
 def test_report_without_records():
     assert "logged no turns in the last 30 days" in report.render([], now=NOW)
+
+
+def test_a_log_line_with_a_field_of_the_wrong_type_is_skipped(tmp_path):
+    path = tmp_path / log.NAME
+    good = rec(1)
+    log.write(path, good)
+    for bad in ({"time": "yesterday"}, {"time": None}, {"session": ["a"]}, {"level": ["lean"]},
+                {"used_skills": 3}, {"tip": [["x"]]}, {"tokens_in": "many"}):
+        log.write(path, {**good, **bad})
+    assert log.read(path) == [good]
+    assert "1 sessions, 1 turns" in report.render(log.read(path), now=NOW)
 
 
 def test_report_counts_levels_tips_and_loads():

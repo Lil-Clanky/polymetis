@@ -415,3 +415,20 @@ def test_cli_report(pm, tmp_path):
     assert "Polymetis report, last 7 days: 1 sessions, 1 turns." in text
     assert "Most loaded skills: github-pr-workflow 1." in text
     assert text.endswith(f"Log: {tmp_path / 'data' / log.NAME}\n")
+
+
+def test_cli_report_says_when_it_cannot_read_the_log(pm, tmp_path):
+    (tmp_path / "data" / log.NAME).mkdir(parents=True)  # unreadable as a file on every system
+    parser = argparse.ArgumentParser()
+    cli.setup_parser(parser)
+    out = io.StringIO()
+    assert cli.handle(parser.parse_args(["report"]), out=out) == 1
+    assert "cannot read its log" in out.getvalue()
+
+
+@pytest.mark.parametrize("days", ["0", "-1"])
+def test_cli_report_looks_back_a_day_or_more(days):
+    parser = argparse.ArgumentParser()
+    cli.setup_parser(parser)
+    with pytest.raises(SystemExit):
+        parser.parse_args(["report", "--days", days])

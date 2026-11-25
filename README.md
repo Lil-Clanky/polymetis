@@ -10,7 +10,7 @@ It works on its own and needs no other plugin. It also comes with [Polytropos](h
 hermes plugins install Lil-Clanky/polymetis
 ```
 
-Hermes asks whether to enable it, and the default answer is no. Polymetis needs Hermes 0.23.2 or newer. Remove it with `hermes plugins remove polymetis`.
+Hermes asks whether to enable it, and the default answer is no. Polymetis needs Hermes 0.23.2 or newer. Remove it with `hermes plugins remove polymetis`. Hermes then also drops its settings from `config.yaml`. Its log stays in its data folder, see [Files](#files), until you delete that folder.
 
 ## What it does
 
@@ -22,7 +22,7 @@ With the default settings this is all it does. The setting `apply` turns on what
 
 ## Settings
 
-Polymetis reads its settings from `plugins.entries.polymetis.settings` in the profile's `config.yaml` at the start of every turn, so a change counts from the next turn. Only the start of an ablation waits until Hermes loads the plugin again, see [Ablation](#ablation). Edit them with `hermes config edit`, for example:
+Polymetis reads its settings from `plugins.entries.polymetis.settings` in the profile's `config.yaml` at the start of every turn, so a change counts from the next turn. A session keeps its level, so a change to `platform_levels` counts from the next session. Only the start of an ablation waits until Hermes loads the plugin again, see [Ablation](#ablation). Edit them with `hermes config edit`, for example:
 
 ```yaml
 plugins:
@@ -37,9 +37,9 @@ plugins:
 | Key | Default | Meaning |
 |---|---|---|
 | `apply` | `[]` | What Polymetis may change: `tips`, `local_tools`, or both. Empty means decide and log only, apart from an ablation. |
-| `log` | `true` | Write the log and the last skill index per platform. With `false` Polymetis writes no files. |
+| `log` | `true` | Write the log and the last skill index per platform. With `false` Polymetis writes no files, so the first turn after a start, without a saved index, gets no tip. |
 | `min_score` | `5` | The score a skill needs for a tip and for a `lean` session, from 0 to 1000. The default comes from the offline measurement in `evals/`. |
-| `max_tips` | `2` | The most skills one tip names, from 0 to 5 |
+| `max_tips` | `2` | The most skills one tip names, a whole number from 0 to 5 |
 | `pin` | `[]` | Skills that always rank first, and that a `lean` request for a local model keeps when the index has them |
 | `block` | `[]` | Skills that are never ranked or tipped |
 | `platform_levels` | `{}` | A fixed level per gateway platform, such as `whatsapp: none` or `cli: full` |
@@ -47,7 +47,7 @@ plugins:
 | `ablation.share` | `0` | The share of new sessions that run without skills, from 0 to 1. It starts when Hermes next loads the plugin, as after a restart of Hermes or the gateway. |
 | `ablation.until` | none | The last day of the ablation, such as `2026-12-31`. Without it the ablation runs until `share` is 0 again. |
 
-A wrong value keeps its default, and Hermes's log names the key without the value.
+A key with a dot is nested: `ablation.share` is `share` under `ablation`, as in `ablation: {share: 0.25, until: 2026-12-31}`. A wrong value keeps its default, and Hermes's log names the key without the value. An ablation with a wrong value or key does not run. Hermes hands Polymetis only the keys it asks for, so a misspelled key, such as `min_scroe`, is ignored without a log line.
 
 ### Tips
 
@@ -118,7 +118,7 @@ Polymetis keeps the text of the current and the previous message in memory only,
 hermes polymetis report --days 30
 ```
 
-The report reads the log and prints counts: session levels, turns per platform, how often the model loaded a tipped skill, the most loaded skills, the variants prepared for local models, outcomes, tool errors, corrections and repeats. It also makes proposals, and changes nothing itself:
+The command is there while the plugin is enabled. The report reads the log and prints counts: session levels, turns per platform, how often the model loaded a tipped skill, the most loaded skills, the variants prepared for local models, outcomes, tool errors, corrections and repeats. It also makes proposals, and changes nothing itself:
 
 - skills that no turn loaded, to leave out with Hermes's `skills.disabled`, once the log covers 14 days or more;
 - an ablation week, when no ablation ran in the last 90 days and either a model answered for the first time in the last 7 days or the log goes back 90 days or more;

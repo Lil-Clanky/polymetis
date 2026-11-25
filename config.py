@@ -43,6 +43,13 @@ def _number(value: Any, key: str, low: float, high: float) -> float:
     return float(value)
 
 
+def _whole(value: Any, key: str, low: int, high: int) -> int:
+    number = _number(value, key, low, high)
+    if not number.is_integer():
+        raise _Bad(f"{key}: expected a whole number from {low} to {high}")
+    return int(number)
+
+
 def _apply(value: Any) -> frozenset[str]:
     names = _names(value, "apply")
     if not set(names) <= set(FEATURES):
@@ -66,7 +73,7 @@ def _date(value: Any) -> datetime.date | None:
     try:
         return datetime.date.fromisoformat(str(value))
     except ValueError:
-        raise _Bad("ablation.until: expected a date such as 2026-12-01") from None
+        raise _Bad("ablation.until: expected a date such as 2026-12-01; no ablation runs") from None
 
 
 def _flag(value: Any, key: str) -> bool:
@@ -79,7 +86,7 @@ _PARSERS: dict[str, Callable[[Any], Any]] = {
     "apply": _apply,
     "log": lambda v: _flag(v, "log"),
     "min_score": lambda v: _number(v, "min_score", 0, 1000),
-    "max_tips": lambda v: int(_number(v, "max_tips", 0, 5)),
+    "max_tips": lambda v: _whole(v, "max_tips", 0, 5),
     "pin": lambda v: _names(v, "pin"),
     "block": lambda v: frozenset(_names(v, "block")),
     "platform_levels": _levels,
@@ -90,19 +97,30 @@ _PARSERS: dict[str, Callable[[Any], Any]] = {
 _FIELDS = {"ablation.share": "ablation_share", "ablation.until": "ablation_until"}
 
 
+def _read(get: Callable[[str, Any], Any], key: str) -> Any:
+    try:
+        return get(key, None)
+    except Exception:  # Hermes rejected the key or could not read config.yaml
+        return None
+
+
 def parse_settings(get: Callable[[str, Any], Any]) -> tuple[Settings, list[str]]:
     """Read every key through ``get(key, default)``. A bad value keeps that key's default and adds a
-    problem that names the key, never the value, which may hold a secret."""
+    problem that names the key, never the value, which may hold a secret. An ablation with a problem
+    does not run, because a mistyped end date or key would leave it running without an end."""
     values, problems = {}, []
+    ablation = _read(get, "ablation")
+    if ablation is not None and not (isinstance(ablation, dict) and set(ablation) <= {"share", "until"}):
+        problems.append("ablation: expected share and until under it, as in {share: 0.25, until: 2026-12-31}; "
+                        "no ablation runs")
     for key, parse in _PARSERS.items():
-        try:
-            raw = get(key, None)
-        except Exception:  # Hermes rejected the key or could not read config.yaml
-            raw = None
+        raw = _read(get, key)
         if raw is None:
             continue
         try:
             values[_FIELDS.get(key, key)] = parse(raw)
         except _Bad as e:
             problems.append(str(e))
+    if any(p.startswith("ablation") for p in problems):
+        values.pop("ablation_share", None)
     return Settings(**values), problems
