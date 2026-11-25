@@ -54,11 +54,11 @@ def api(msgs, *, session="s1", platform="cli", tools=TOOLS):
                               response={"usage": {"prompt_tokens": 120, "total_tokens": 150}})
 
 
-def turn(text, *, session="s1", platform="cli", system=INDEX, first=None, used=()):
+def turn(text, *, session="s1", platform="cli", system=INDEX, first=None, used=(), tools=TOOLS):
     """One whole turn as Hermes runs it; returns what pre_llm_call gave back."""
     out = start(text, session=session, platform=platform)
     sent = text + ("\n\n" + out["context"] if out else "")
-    api(messages(first or sent, system), session=session, platform=platform)
+    api(messages(first or sent, system), session=session, platform=platform, tools=tools)
     for name in used:
         hooks.on_post_tool_call(tool_name="skill_view", args={"name": name}, session_id=session, status="ok")
     hooks.on_session_end(session_id=session, completed=True, interrupted=False)
@@ -719,6 +719,25 @@ def test_a_session_whose_requests_have_no_index_drops_the_level_from_its_platfor
 def test_a_session_without_any_index_is_logged_as_having_none(pm, tmp_path):
     turn("Please merge my pull request", system=NO_SKILLS)
     assert (records(tmp_path)[0]["level"], records(tmp_path)[0]["level_reason"]) == ("none", "no_index")
+
+
+NO_SKILL_TOOLS = [t for t in TOOLS if shape.tool_name(t) not in ("skills_list", "skill_view", "skill_manage")]
+
+
+def test_a_skills_section_in_a_request_without_skill_tools_is_no_index(pm, tmp_path):
+    # with skills off, such a section comes from a context file or memory: Hermes adds its own only with a skill tool
+    turn("Please merge my pull request", tools=NO_SKILL_TOOLS)
+    rec = records(tmp_path)[0]
+    assert (rec["level"], rec["level_reason"], rec["offered_skills"]) == ("none", "no_index", 0)
+
+
+@pytest.mark.parametrize("tools", [
+    NO_SKILL_TOOLS[:3] + [{"_truncated_items": 40}],  # Hermes cut the list short
+    [{"functionDeclarations": [{"name": "terminal"}]}],  # names in a form Polymetis does not read
+])
+def test_the_index_stays_when_the_tools_cannot_tell(pm, tmp_path, tools):
+    turn("Please merge my pull request", tools=tools)
+    assert (records(tmp_path)[0]["level"], records(tmp_path)[0]["level_reason"]) == ("lean", "match")
 
 
 def test_a_platform_level_stays_in_a_session_without_an_index(pm, tmp_path):

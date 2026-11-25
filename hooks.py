@@ -147,6 +147,18 @@ def _count(items: list) -> int:
     return left_out + sum(not (isinstance(t, dict) and "cachePoint" in t) for t in items)
 
 
+SKILL_TOOLS = {"skills_list", "skill_view", "skill_manage"}  # Hermes adds its index only with one of these
+
+
+def _no_skill_tools(tools: Any) -> bool:
+    """Whether a request surely offers none of Hermes's skill tools: a whole tool list with names Polymetis can
+    read. Hermes ends a list that it cut short with ``{"_truncated_items": n}``."""
+    if not isinstance(tools, list) or (tools and isinstance(tools[-1], dict) and "_truncated_items" in tools[-1]):
+        return False
+    names = {shape.tool_name(t) for t in tools} - {""}
+    return bool(names) and not names & SKILL_TOOLS
+
+
 def _search(s: Settings, session: Session, turn: Turn) -> None:
     catalog = _catalog(session)
     if catalog is None:
@@ -238,6 +250,8 @@ def on_pre_api_request(session_id: str = "", turn_id: str = "", platform: str = 
     body = body if isinstance(body, dict) else {}
     config = body.get("toolConfig")
     tools = config.get("tools") if isinstance(config, dict) else body.get("tools")  # Bedrock's, or the others'
+    if found is not None and _no_skill_tools(tools):
+        found = None  # not Hermes's own index, as with skills off: a copy, as in a context file or memory
     with STORE.lock:
         session.provider, session.model = provider or session.provider, model or session.model
         first = session.catalog is None  # the session's first request in this process

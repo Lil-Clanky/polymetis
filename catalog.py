@@ -73,8 +73,10 @@ def _block(text: str) -> tuple[int, int] | None:
     section has no index, as with Hermes's skills off. Of the blocks that close before the next section opens,
     the one with the most skills counts.
     shortcut: of two equal sections the first, as the prompts that Hermes adds after the index, such as an API
-    client's, are more likely to repeat it than the context files before it; and a description with that header
-    and the opening tag on lines of their own hides the skills before it; revisit if either shows up"""
+    client's, are more likely to repeat it than the context files before it, and a bigger copy in a context file
+    or memory wins over Hermes's own; a description with that header and the opening tag on lines of their own
+    hides the skills before it, and one with the closing tag on a line of its own those after it; revisit if any
+    of these shows up"""
     starts = [m.end() for m in SECTION.finditer(text)]
     best, end = None, -1
     for i, start in enumerate(starts):

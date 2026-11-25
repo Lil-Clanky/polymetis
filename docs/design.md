@@ -33,10 +33,12 @@ anywhere, and it starts in a shadow mode that only measures.
 - `pre_api_request` runs before every provider attempt with `session_id`, `turn_id`, `platform`,
   `model`, `provider`, `base_url`, `system_prompt`, `request_messages` and `request.body.tools`
   (`agent/turn_api_request.py:60-110`). Auxiliary calls (titles, compression) do not fire it.
-- The skill index is the `<available_skills>` block of the system prompt, one line per skill,
-  `- name: description`, with the description cut to `skills.index_desc_limit` (60 characters by
-  default) and categories as headers (`agent/prompt_builder.py:1305-1366`). It is already filtered by
-  `skills.disabled`, `skills.platform_disabled` and the frontmatter conditions.
+- The skill index is the `<available_skills>` block in the "## Skills" section of the system prompt,
+  one line per skill, `- name: description`, with the description cut to `skills.index_desc_limit`
+  (60 characters by default) and categories as headers (`agent/prompt_builder.py:1305-1366`). It is
+  already filtered by `skills.disabled`, `skills.platform_disabled` and the frontmatter conditions.
+  Hermes adds the section only when the agent has `skills_list`, `skill_view` or `skill_manage`
+  (`agent/system_prompt.py:_skills_prompt`), so Polymetis reads no index from a request without them.
 - `post_api_request` carries the normalized response with the model that answered and the usage.
 - `post_tool_call` carries `tool_name`, `args`, `session_id`, `turn_id` and `status`
   (`model_tools.py:708-722`). A `skill_view` call names the skill in `args.name`.
