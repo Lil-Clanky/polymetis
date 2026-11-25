@@ -2,7 +2,7 @@
 
 Polymetis is a plugin for [Hermes Agent](https://github.com/NousResearch/hermes-agent) that decides per session which of Hermes's skills a model gets. On every turn it ranks the skills in Hermes's skill index against the user's message, on this machine and without a model, and it logs what it decided. By default it changes nothing that a model gets. Two features can be turned on: a short tip that names the matching skill, and a smaller request for local models behind `polytropos-router`.
 
-It works on its own and needs no other plugin. It also comes with [Polytropos](https://github.com/Lil-Clanky/polytropos), a plugin pack for Hermes, and works together with the pack's model router.
+It works on its own and needs no other plugin. [Polytropos](https://github.com/Lil-Clanky/polytropos), a plugin pack for Hermes, installs it too from its first release after v0.2.1, and the pack's model router works together with it.
 
 ## Install
 
@@ -10,7 +10,11 @@ It works on its own and needs no other plugin. It also comes with [Polytropos](h
 hermes plugins install Lil-Clanky/polymetis
 ```
 
-Hermes asks whether to enable it, and the default answer is no. Polymetis needs Hermes 0.23.2 or newer. Remove it with `hermes plugins remove polymetis`. Hermes then also drops its settings from `config.yaml`. Its log stays in its data folder, see [Files](#files), until you delete that folder.
+In a terminal, Hermes asks whether to enable it, and the default answer is no; without a terminal it leaves it off. Enable it later with `hermes plugins enable polymetis`. The Polytropos pack installs and enables it with the default settings, which only decide and log. Polymetis needs Hermes 0.23.2 or newer.
+
+Update it with `hermes plugins update polymetis`. An install pinned to a commit, as with `--ref` or the pack, does not update that way; move it with `hermes plugins install Lil-Clanky/polymetis --force --ref <40-character commit>`, because `--force` alone reinstalls the commit it had.
+
+Remove it with `hermes plugins remove polymetis`. Hermes then also drops its settings from `config.yaml`. Its log and its saved skill indexes stay in its data folder, see [Files](#files), until you delete that folder.
 
 ## What it does
 
@@ -63,7 +67,7 @@ Whether tips help is still open. In the first live tests with free cloud models,
 
 ### Smaller requests for local models
 
-With `apply: [local_tools]` and [`polytropos-router`](https://github.com/Lil-Clanky/polytropos) as the model provider, the router asks Polymetis for the request that a local model gets. Polymetis finds the session by the request's system prompt and user messages, as Hermes sent them in that turn, and returns one of four variants. Other requests, such as those of Hermes's background review, go to the model as they are.
+With `apply: [local_tools]` and [`polytropos-router`](https://github.com/Lil-Clanky/polytropos) as the model provider, the router asks Polymetis for the request that a local model gets. Polymetis finds the session by the request's system prompt and user messages, as Hermes sent them in that turn, and returns one of four variants. Other requests, such as those of Hermes's background review, go to the model as they are. Only a router from the Polytropos releases after v0.2.1 asks; with an older one, `local_tools` does nothing and the log's `local` stays empty.
 
 | Variant | Tools | Skill index |
 |---|---|---|
@@ -82,7 +86,7 @@ An ablation measures whether skills help. While `ablation.share` is above 0 and 
 
 Only a session that starts while the ablation runs gets a group: a session is new when it has no history yet. One that Polymetis first sees on a later turn may have used its skills already, so it gets none. A subagent that `delegate_task` starts gets its parent's group while the ablation runs, if Polymetis knows the parent, and none otherwise. When Hermes compresses a conversation and gives it a new session id, Polymetis follows it through Hermes's `post_compaction` hook, so the session keeps its group. A session leaves its group, and has its skills from then on, when the ablation ends or when Polymetis loses track of it: after a restart of Hermes or the gateway, or when it is not among the last 256 sessions that Polymetis saw. Its later turns, like those of every session without a group, have `arm: null`. The report compares both groups up to that point.
 
-While a plugin has an `llm_request` middleware, Hermes deep-copies every request several times, so Polymetis adds its middleware, and its `pre_tool_call` hook, only when Hermes loads it while an ablation is set. After setting `ablation.share`, restart Hermes or the gateway; until Hermes loads the plugin again, its log says that the ablation waits for a restart. When the ablation ends, by `until` or a `share` of 0, its sessions get their skills back from their next turn. The middleware stays until Hermes loads the plugin again, and with it the copying, so restart after an ablation too; while it stays, a new ablation starts at once. A reload of the plugins, as `hermes plugins disable` and `enable` cause in a running gateway, counts as a load.
+While a plugin has an `llm_request` middleware, Hermes deep-copies every request several times, so Polymetis adds its middleware, and its `pre_tool_call` hook, only when Hermes loads it while an ablation is set. After setting `ablation.share`, restart Hermes or the gateway; until Hermes loads the plugin again, its log says that the ablation waits for a restart. When the ablation ends, by `until` or a `share` of 0, its sessions get their skills back from their next turn. The middleware stays until Hermes loads the plugin again, and with it the copying, so restart after an ablation too; while it stays, a new ablation starts at once. A reload of the plugins, as `hermes plugins disable` and `enable` cause in a running gateway, counts as a load. For the same reason `hermes plugins validate` warns that `pre_tool_call` is declared but not registered.
 
 ## Files
 

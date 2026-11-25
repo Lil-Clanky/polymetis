@@ -1,3 +1,4 @@
+import codecs
 import copy
 import datetime
 import json
@@ -387,7 +388,7 @@ def test_log_keeps_one_older_file(tmp_path, monkeypatch):
 
 def test_log_read_skips_a_byte_order_mark(tmp_path):
     path = tmp_path / log.NAME
-    path.write_bytes(b"\xef\xbb\xbf" + b'{"turn": 1}\n')  # as an editor on Windows may save it
+    path.write_bytes(codecs.BOM_UTF8 + b'{"turn": 1}\n')  # as an editor on Windows may save it
     assert log.read(path) == [{"turn": 1}]
 
 
