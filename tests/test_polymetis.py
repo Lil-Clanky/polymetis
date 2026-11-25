@@ -383,7 +383,7 @@ def test_a_log_line_with_a_field_of_the_wrong_type_is_skipped(tmp_path):
                 {"used_skills": 3}, {"tip": [["x"]]}, {"tokens_in": "many"}):
         log.write(path, {**good, **bad})
     assert log.read(path) == [good]
-    assert "1 sessions, 1 turns" in report.render(log.read(path), now=NOW)
+    assert "1 session, 1 turn." in report.render(log.read(path), now=NOW)
 
 
 def test_report_counts_levels_tips_and_loads():
@@ -392,7 +392,8 @@ def test_report_counts_levels_tips_and_loads():
                rec(40, session="old", used_skills=["z"])]
     out = report.render(records, now=NOW)
     assert "2 sessions, 2 turns" in out and "lean 1, none 1" in out
-    assert "in 1 of 1 the model loaded a tipped skill. Tips sent to the model: 1." in out
+    assert ("Tips: a skill matched in 1 turn, and 1 of these got a tip. The model loaded a matching skill in 1 of 1 "
+            "turns with a tip, and in 0 turns without one.") in out
     assert "Skills loaded: in 2 turns, 1 of them without a matching tip." in out and "z" not in out
 
 
@@ -402,7 +403,7 @@ def test_report_proposes_unused_skills_only_with_enough_history():
     assert "this needs 14 days or more" in report.render(short, catalogs=catalogs, now=NOW)
     long = [rec(1, used_skills=["x"]), rec(20, used_skills=["y"])]
     out = report.render(long, catalogs=catalogs, now=NOW)
-    assert "Proposal: these 1 skills were not loaded" in out and out.rstrip().endswith("never")
+    assert "Proposal: 1 skill was not loaded in the last 30 days." in out and out.rstrip().endswith("never")
 
 
 def test_report_compares_the_ablation_arm():
@@ -426,12 +427,21 @@ def test_report_compares_chats_up_to_when_they_left_their_group():
     assert rows == {"normal": ["1", "1"], "ablation": ["2", "2"]}
     assert "  ablation          1 subagents, 1000 tokens each" in out
     assert "  normal            0 subagents, 0 tokens each" in out
-    assert "Left out: 1 turns without a request that Polymetis saw." in out
+    assert "Left out: 1 turn without a request that Polymetis saw." in out
 
 
 def test_report_proposes_an_ablation_week_for_a_new_model():
-    records = [rec(30, answered_by=["m1"]), rec(2, session="b", answered_by=["m2"])]
+    records = [rec(30, answered_by=["m1"], arm=None), rec(2, session="b", answered_by=["m2"], arm=None)]
     out = report.render(records, now=NOW)
     assert "Proposal: run an ablation week (new model(s) since 7 days: m2)" in out
-    assert "then restart Hermes or the gateway" in out and "ablation: {share: 0.25, until: " in out
-    assert "Proposal: run an ablation week" not in report.render([rec(2)], now=NOW)
+    command = out.splitlines()[-1]
+    assert command.startswith("  hermes config set plugins.entries.polymetis.settings.ablation '")
+    last_day = datetime.date.fromtimestamp(NOW) + datetime.timedelta(days=6)  # a week, both ends included
+    assert yaml.safe_load(command.split("'")[1]) == {"share": 0.25, "until": last_day}  # as config set reads it
+    assert "Proposal: run an ablation week" not in report.render([rec(2, arm=None)], now=NOW)
+
+
+def test_report_proposes_no_ablation_while_one_runs():
+    records = [rec(120, session="old", arm=None), rec(1, session="b", arm="normal")]  # none in the ablation arm yet
+    assert "Proposal: run an ablation week" not in report.render(records, now=NOW)
+    assert "no ablation in the last 90 days" in report.render([records[0], rec(1, session="b", arm=None)], now=NOW)

@@ -487,7 +487,7 @@ def test_cli_report(pm, tmp_path):
     out = io.StringIO()
     assert cli.handle(parser.parse_args(["report", "--days", "7"]), out=out) == 0
     text = out.getvalue()
-    assert "Polymetis report, last 7 days: 1 sessions, 1 turns." in text
+    assert "Polymetis report, last 7 days: 1 session, 1 turn." in text
     assert "Most loaded skills: github-pr-workflow 1." in text
     assert text.endswith(f"Log: {tmp_path / 'data' / log.NAME}\n")
 

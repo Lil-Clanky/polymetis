@@ -22,7 +22,7 @@ With the default settings this is all it does. The setting `apply` turns on what
 
 ## Settings
 
-Polymetis reads its settings from `plugins.entries.polymetis.settings` in the profile's `config.yaml` at the start of every turn, so a change counts from the next turn. A session keeps its level, so a change to `platform_levels` counts from the next session. Only the start of an ablation waits until Hermes loads the plugin again, see [Ablation](#ablation). Edit them with `hermes config edit`, for example:
+Polymetis reads its settings from `plugins.entries.polymetis.settings` in the profile's `config.yaml` at the start of every turn, so a change counts from the next turn. A session keeps its level, so a change to `platform_levels` counts from the next session. Only the start of an ablation waits until Hermes loads the plugin again, see [Ablation](#ablation). Edit them with `hermes config edit`, or set one with `hermes config set plugins.entries.polymetis.settings.<key> <value>`. For example:
 
 ```yaml
 plugins:
@@ -104,7 +104,7 @@ A line of `decisions.jsonl` has these fields.
 | `offered_skills`, `offered_tools` | How many skills the index held, and how many tools the request had after any middleware. For a request that Hermes passes on only in short form, it is Hermes's count of the agent's tools. |
 | `candidates` | The 5 best skills with their scores |
 | `tip`, `tip_given` | The skills a tip would name, and whether it was sent |
-| `local`, `chosen` | The variant prepared for a local model, and the skills a `lean` local request keeps |
+| `local`, `chosen` | The variant prepared for a local model, whether or not the router then sent the request there, and the skills a `lean` local request keeps |
 | `used_skills`, `used_tools`, `tool_errors` | The skills from the index that the model loaded with `skill_view`; the tool calls per tool, where a name that does not look like a tool's counts as `other`; and how many calls failed |
 | `api_calls`, `tokens_in`, `tokens_out` | Requests in the turn and the token counts the provider reported |
 | `duration_ms`, `outcome` | The turn's length, and `completed`, `failed`, `interrupted` or Hermes's exit reason. A turn whose last request failed is `failed`. A turn that Hermes ended without saying how is `unknown`, and one still running when Hermes's process exits is `interrupted`. |
@@ -118,10 +118,10 @@ Polymetis keeps the text of the current and the previous message in memory only,
 hermes polymetis report --days 30
 ```
 
-The command is there while the plugin is enabled. The report reads the log and prints counts: session levels, turns per platform, how often the model loaded a tipped skill, the most loaded skills, the variants prepared for local models, outcomes, tool errors, corrections and repeats. It also makes proposals, and changes nothing itself:
+The command is there while the plugin is enabled. The report reads the log and prints counts: session levels, turns per platform, how often the model loaded a matching skill with a tip and without one, the most loaded skills, the variants prepared for local models, outcomes, tool errors, corrections and repeats. It also makes proposals, and changes nothing itself:
 
 - skills that no turn loaded, to leave out with Hermes's `skills.disabled`, once the log covers 14 days or more;
-- an ablation week, when no ablation ran in the last 90 days and either a model answered for the first time in the last 7 days or the log goes back 90 days or more;
+- an ablation week, as a `hermes config set` command, when no ablation ran in the last 90 days and either a model answered for the first time in the last 7 days, at least a day after the log began, or the log goes back 90 days or more;
 - during and after an ablation, a comparison of both groups per turn: tool errors, corrections, repeats, failed turns and tokens. It counts only the sessions that started while the ablation ran, up to when they left their group, and leaves out turns without a request that Polymetis saw. Subagents that `delegate_task` started get lines of their own, because each of their turns is a whole task.
 
 ## Measurements
