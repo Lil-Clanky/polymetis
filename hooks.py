@@ -258,22 +258,38 @@ def on_post_api_request(session_id: str = "", turn_id: str = "", response_model:
             turn.tokens_out += int(out or 0)
 
 
+def _skill_names(args: Any, result: Any) -> list[str]:
+    """The names a skill_view call may have loaded its skill by: the one in the call, and the one that Hermes
+    resolved a path such as ``category/name`` to. None when the load failed."""
+    names = [args.get("name") if isinstance(args, dict) else None]
+    try:
+        parsed = json.loads(result) if isinstance(result, str) else None
+    except ValueError:  # not JSON, such as a result that Hermes moved to a file: the name in the call
+        parsed = None
+    if isinstance(parsed, dict):
+        if not parsed.get("success"):
+            return []
+        names.append(parsed.get("name"))
+    return [n for n in names if isinstance(n, str)]
+
+
 @_safe
-def on_post_tool_call(tool_name: str = "", args: Any = None, session_id: str = "", turn_id: str = "",
-                      status: str = "", **kwargs) -> None:
+def on_post_tool_call(tool_name: str = "", args: Any = None, result: Any = None, session_id: str = "",
+                      turn_id: str = "", status: str = "", **kwargs) -> None:
     session = STORE.get(session_id) if session_id else None
     turn = _turn(session, turn_id)
     if turn is None or not isinstance(tool_name, str) or not tool_name:
         return
+    loaded = _skill_names(args, result) if tool_name == "skill_view" and status not in ("error", "blocked") else []
     with STORE.lock:
         turn.seen = time.monotonic()
         # the model writes these names, so the log takes only a tool name's shape and the index's skill names
         turn.used_tools[tool_name if _TOOL_NAME.fullmatch(tool_name) else "other"] += 1
         if status == "error":
             turn.tool_errors += 1
-        name = args.get("name") if isinstance(args, dict) else None
         known = {skill.name for skill in session.catalog or ()}
-        if tool_name == "skill_view" and status != "blocked" and name in known and name not in turn.used_skills:
+        name = next((n for n in loaded if n in known), None)
+        if name is not None and name not in turn.used_skills:
             turn.used_skills.append(name)
 
 

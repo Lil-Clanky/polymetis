@@ -322,6 +322,22 @@ def test_only_index_skills_and_tool_names_reach_the_log(pm, tmp_path):
     assert SECRET not in (tmp_path / "data" / log.NAME).read_text(encoding="utf-8")
 
 
+def test_a_skill_loaded_by_its_path_counts_and_a_failed_load_does_not(pm, tmp_path):
+    turn("Please merge my pull request")
+    start("Draw some ascii art")
+    loads = [("art/ascii-art", {"success": True, "name": "ascii-art", "content": "..."}, "ok"),  # Hermes resolved the path
+             ("github-issues", {"success": False, "error": "Skill 'github-issues' is disabled."}, "error"),
+             ("gif-search", {"success": False, "error": "not supported on this platform"}, "ok"),
+             ("github-pr-workflow", "a result moved to a file", "ok"),  # not JSON: the name in the call counts
+             ("ascii-art", {"success": True, "status": "unchanged", "name": "ascii-art"}, "ok")]  # a repeat view
+    for name, result, status in loads:
+        result = result if isinstance(result, str) else json.dumps(result)
+        hooks.on_post_tool_call(tool_name="skill_view", args={"name": name}, result=result, session_id="s1",
+                                status=status)
+    hooks.on_session_end(session_id="s1", completed=True)
+    assert records(tmp_path)[-1]["used_skills"] == ["ascii-art", "github-pr-workflow"]
+
+
 @pytest.mark.parametrize("request_, expected", [
     ({"body": {"tools": TOOLS[:3]}}, 3),
     ({"body": {"tools": TOOLS[:3] + [{"_truncated_items": 57}]}}, 60),  # Hermes kept 50 items of a long list
