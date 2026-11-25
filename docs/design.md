@@ -102,8 +102,8 @@ turn, so they would be an opt-in of their own.
   you need it.</skill-hint>` when the level is not `none` and a skill reaches `min_score`.
 - `local_tools`: Polymetis registers a request shaper with `polytropos-router`. Before the router
   sends a request to a local model, it asks the shaper for that model's request. The shaper finds
-  the session through a fingerprint of the request (the system prompt, the first user message and
-  the last one), which it recorded in `pre_api_request` for the turn's own requests, and builds the
+  the session through a fingerprint of the request (the system prompt and every user message),
+  which it recorded in `pre_api_request` for the turn's own requests, and builds the
   session's variant:
   - keep only the tools in `local_tools` (plus `skill_view` at `lean`);
   - at `none` and `bare`, remove the skill index block and every sentence that points at

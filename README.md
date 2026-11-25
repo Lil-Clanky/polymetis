@@ -61,7 +61,7 @@ The hint names at most `max_tips` skills, and only skills that score at least ha
 
 ### Smaller requests for local models
 
-With `apply: [local_tools]` and [`polytropos-router`](https://github.com/Lil-Clanky/polytropos) as the model provider, the router asks Polymetis for the request that a local model gets. Polymetis finds the session by the request's system prompt, first user message and last user message, as Hermes sent them in that turn, and returns one of four variants. Other requests, such as those of Hermes's background review, go to the model as they are.
+With `apply: [local_tools]` and [`polytropos-router`](https://github.com/Lil-Clanky/polytropos) as the model provider, the router asks Polymetis for the request that a local model gets. Polymetis finds the session by the request's system prompt and user messages, as Hermes sent them in that turn, and returns one of four variants. Other requests, such as those of Hermes's background review, go to the model as they are.
 
 | Variant | Tools | Skill index |
 |---|---|---|

@@ -11,7 +11,8 @@ from dataclasses import dataclass
 OPEN, CLOSE = "<available_skills>", "</available_skills>"
 HEADER = "## Skills\n"
 LAST_LINE = "Only proceed without loading a skill if genuinely none are relevant to the task."
-HINT = re.compile(r"\n*<skill-hint>.*?</skill-hint>", re.S)
+# the hints of decide.hint only; text that a user puts between these tags stays
+HINT = re.compile(r"\n*<skill-hint>Relevant skills?: [^<\n]*\. Load one with skill_view if you need it\.</skill-hint>")
 # shortcut: drops whole sentences that point at skill_view( or name skill_manage, which matches Hermes's
 # wording today; a sentence with a dot inside would be cut short, revisit when the wording changes.
 # A match may start only where a sentence can, at a line's start or after ". ": without that anchor the

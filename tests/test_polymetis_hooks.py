@@ -428,6 +428,13 @@ def test_fingerprint_matches_the_same_conversation_only():
     assert sessions.fingerprint("not a list") is None and sessions.fingerprint([]) is None
 
 
+def test_two_chats_that_differ_only_in_the_middle_get_their_own_key():
+    def chat(middle):
+        return messages("hi") + [{"role": "assistant", "content": "hello"}, {"role": "user", "content": middle},
+                                 {"role": "assistant", "content": "done"}, {"role": "user", "content": "thanks"}]
+    assert sessions.fingerprint(chat("merge my pull request")) != sessions.fingerprint(chat("draw a cat"))
+
+
 class FakeCtx:
     def __init__(self, data_dir, values=None):
         self.hooks, self.middleware, self.commands, self.unload = {}, {}, {}, []

@@ -150,8 +150,11 @@ def test_text_of_joins_text_parts_only():
     assert catalog.text_of(parts) == "a\nb\nc" and catalog.text_of(None) == ""
 
 
-def test_strip_hints():
-    assert catalog.strip_hints("Fix it\n\n<skill-hint>Relevant skill: x.</skill-hint>") == "Fix it"
+def test_strip_hints_takes_polymetis_hints_only():
+    assert catalog.strip_hints("Fix it\n\n" + decide.hint(["x"])) == "Fix it"
+    assert catalog.strip_hints("Fix it\n\n" + decide.hint(["cat/x", "plugin:y"])) == "Fix it"
+    own = "Why does <skill-hint>this</skill-hint> show up in my prompt?"  # the user's own words stay
+    assert catalog.strip_hints(own) == own
 
 
 # --- search ---
@@ -245,7 +248,7 @@ def test_hint():
 
 # --- request variants ---
 
-def request(user="Merge my PR\n\n<skill-hint>Relevant skill: github-pr-workflow.</skill-hint>"):
+def request(user="Merge my PR\n\n" + decide.hint(["github-pr-workflow"])):
     return {"model": "m", "stream": True, "max_tokens": 500, "tool_choice": "auto", "parallel_tool_calls": True,
             "messages": [{"role": "system", "content": INDEX}, {"role": "user", "content": user},
                          {"role": "assistant", "content": "ok"}],
