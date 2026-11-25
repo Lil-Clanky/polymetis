@@ -7,9 +7,12 @@ from .config import Settings
 from .search import words
 
 TIP_RATIO = 0.5  # a second skill joins the tip when it scores at least this share of the best one
+# "no" and "nee" count unless they decline politely: "no thanks", "no worries", "nee hoor"
 _CORRECTION = re.compile(
-    r"^\W*(no\b|nope\b|wrong\b|incorrect\b|actually\b|that'?s not\b|that is not\b|not what i\b|i meant\b|"
-    r"nee\b|neen\b|fout\b|klopt niet\b|dat klopt niet\b|niet wat ik\b|ik bedoelde\b|eigenlijk\b)", re.I)
+    r"^\W*(?:(?:sorry|oops)\W+)?(no\b(?!\W+(?:worries|problems?|thanks?)\b)|nope\b|wrong\b|incorrect\b|actually\b|"
+    r"(?:that|this)(?:['\u2019]?s| is) (?:not|wrong|incorrect)\b|not what i\b|i meant\b|"
+    r"nee\b(?!\W+(?:hoor|dank|bedankt)\b)|neen\b|fout\b|(?:dat )?klopt niet\b|dat is (?:fout|onjuist|verkeerd)\b|"
+    r"niet wat ik\b|ik bedoelde\b|eigenlijk\b)", re.I)
 REPEAT_OVERLAP = 0.7
 
 

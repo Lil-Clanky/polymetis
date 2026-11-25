@@ -150,7 +150,7 @@ def _search(s: Settings, session: Session, turn: Turn) -> None:
     if catalog is None:
         return
     turn.candidates = rank(session.text, catalog, pin=s.pin, block=s.block)
-    top = max((score for _, score in turn.candidates), default=0.0)
+    top = max((score for _, score in turn.candidates), default=float("-inf"))  # no match stays below min_score 0
     names = {skill.name for skill in catalog}
     if session.level is None:
         session.level, session.level_reason = decide.session_level(s, platform=session.platform, top=top)

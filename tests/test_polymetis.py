@@ -53,6 +53,11 @@ def test_a_bad_value_keeps_its_default_and_the_problem_never_quotes_the_value():
     assert any(p.startswith("min_score:") for p in problems)
 
 
+def test_platform_names_in_platform_levels_ignore_case():
+    s, problems = settings(platform_levels={"WhatsApp": "none"})
+    assert problems == [] and s.platform_levels == {"whatsapp": "none"}
+
+
 def test_a_failing_config_read_means_the_default():
     def get(key, default=None):
         raise RuntimeError("config.yaml is broken")
@@ -220,12 +225,15 @@ def test_arm_follows_the_share_and_the_end_date():
 
 
 @pytest.mark.parametrize("text", ["No, that is wrong", "Actually I meant the other file", "nee, ik bedoelde iets anders",
-                                  "Dat klopt niet", "  wrong again"])
+                                  "Dat klopt niet", "  wrong again", "That\u2019s not what I asked",
+                                  "That's wrong, use pandas", "This is incorrect", "Sorry, I meant pandas",
+                                  "Dat is fout"])
 def test_correction(text):
     assert decide.is_correction(text)
 
 
-@pytest.mark.parametrize("text", ["Nobody answered", "Now merge it", "Notes for today", ""])
+@pytest.mark.parametrize("text", ["Nobody answered", "Now merge it", "Notes for today", "", "No worries, thanks for the help!",
+                                  "No problem. Next: the tests", "Nee hoor, dank je!", "No thanks, that is all"])
 def test_no_correction(text):
     assert not decide.is_correction(text)
 

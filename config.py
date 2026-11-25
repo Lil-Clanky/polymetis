@@ -60,7 +60,7 @@ def _apply(value: Any) -> frozenset[str]:
 def _levels(value: Any) -> dict[str, str]:
     if not isinstance(value, dict) or not all(isinstance(k, str) and v in LEVELS for k, v in value.items()):
         raise _Bad(f"platform_levels: expected platform names mapped to {', '.join(LEVELS)}")
-    return dict(value)
+    return {k.lower(): v for k, v in value.items()}  # Hermes names its platforms in lower case
 
 
 def _date(value: Any) -> datetime.date | None:

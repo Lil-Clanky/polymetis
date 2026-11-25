@@ -119,6 +119,12 @@ def test_the_level_is_sticky_and_upgrades_once(pm, tmp_path):
     assert records(tmp_path)[2]["chosen"] == ["ascii-art"]
 
 
+def test_min_score_zero_still_needs_a_matching_skill(pm, tmp_path):
+    pm["min_score"] = 0
+    turn("Hello, how are you?")
+    assert (records(tmp_path)[0]["level"], records(tmp_path)[0]["level_reason"]) == ("none", "no_match")
+
+
 def test_a_platform_level_wins(pm, tmp_path):
     pm["platform_levels"] = {"whatsapp": "full"}
     turn("Hello", platform="whatsapp")

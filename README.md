@@ -108,7 +108,7 @@ A line of `decisions.jsonl` has these fields.
 | `used_skills`, `used_tools`, `tool_errors` | The skills from the index that the model loaded with `skill_view`, by name or by a path such as `category/name`, leaving out loads that failed; the tool calls per tool, where a name that does not look like a tool's counts as `other`; and how many calls failed, as Hermes judges it, so a command that exits with an error code counts |
 | `api_calls`, `tokens_in`, `tokens_out` | Requests in the turn and the token counts the provider reported |
 | `duration_ms`, `outcome` | The turn's length, and `completed`, `failed`, `interrupted` or Hermes's exit reason. A turn whose last request failed is `failed`. A turn that Hermes ended without saying how is `unknown`, and one still running when Hermes's process exits is `interrupted`. |
-| `correction`, `repeat` | Whether the message starts like a correction, with words such as "no", "actually", "nee" or "klopt niet", and whether it and the message before share at least 70% of their words |
+| `correction`, `repeat` | Whether the message starts like a correction, with words such as "no", "actually", "that's wrong", "I meant", "nee" or "klopt niet", but not "no thanks" or "no worries", and whether it and the message before share at least 70% of their words |
 
 Polymetis keeps the text of the current and the previous message in memory only, for the search and these two fields. It makes no network calls. Hermes's background review, which looks back at a turn with the same session id, counts in no turn.
 
