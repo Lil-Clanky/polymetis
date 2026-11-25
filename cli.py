@@ -8,8 +8,8 @@ from . import hooks, log, report
 
 def days(text: str) -> int:  # named for argparse's message: "invalid days value"
     value = int(text)
-    if value < 1:
-        raise argparse.ArgumentTypeError("expected 1 or more days")
+    if not 1 <= value <= 36500:
+        raise argparse.ArgumentTypeError("expected 1 to 36500 days")
     return value
 
 
@@ -17,7 +17,7 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
     # The dest must differ from Hermes's own `command`, which names `polymetis` itself.
     sub = parser.add_subparsers(dest="polymetis_command", required=True, metavar="<command>")
     p = sub.add_parser("report", help="show what Polymetis decided and which skills the models used")
-    p.add_argument("--days", type=days, default=30, help="look at the last N days, 1 or more (default 30)")
+    p.add_argument("--days", type=days, default=30, help="look at the last N days, 1 to 36500 (default 30)")
 
 
 def handle(args: argparse.Namespace, out=None) -> int:

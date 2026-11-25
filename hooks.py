@@ -95,9 +95,12 @@ def _catalog(session: Session) -> tuple | None:
     if session.platform not in STORE.catalogs:
         try:
             rows = json.loads(_catalog_file(session.platform).read_text(encoding="utf-8"))
-            STORE.catalogs[session.platform] = tuple(Skill(**row) for row in rows)
+            skills = tuple(Skill(**row) for row in rows)
         except (OSError, ValueError, TypeError):
             return None
+        if not skills:  # nothing to rank, as in a file that a hand edit emptied
+            return None
+        STORE.catalogs[session.platform] = skills
     return STORE.catalogs.get(session.platform)
 
 
@@ -422,7 +425,8 @@ def catalogs() -> dict[str, list[str]]:
     out = {}
     for path in sorted(_data_dir().glob("index-*.json")):
         try:
-            out[path.stem[len("index-"):]] = [row["name"] for row in json.loads(path.read_text(encoding="utf-8"))]
+            names = [row["name"] for row in json.loads(path.read_text(encoding="utf-8"))]
         except (OSError, ValueError, TypeError, KeyError):
             continue
+        out[path.stem[len("index-"):]] = [n for n in names if isinstance(n, str)]
     return out

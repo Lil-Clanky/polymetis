@@ -2,6 +2,7 @@ import copy
 import datetime
 import json
 import os
+import threading
 import time
 
 import pytest
@@ -135,6 +136,13 @@ def test_strip_skills_takes_linear_time_on_a_long_line():
     started = time.perf_counter()
     assert catalog.strip_skills(text) == text
     assert time.perf_counter() - started < 0.5  # a pattern tried at every position took 5 seconds here
+
+
+def test_strip_hints_takes_linear_time_on_blank_lines():
+    text = "start of log" + "\n" * 150_000 + "end of log"
+    started = time.perf_counter()
+    assert catalog.strip_hints(text + "\n\n" + decide.hint(["a"])) == text
+    assert time.perf_counter() - started < 0.5  # a hint pattern tried at every blank line took 9 seconds here
 
 
 def test_keep_skills_lists_only_the_named_skills():
@@ -364,6 +372,40 @@ def test_log_keeps_one_older_file(tmp_path, monkeypatch):
     assert path.with_name(log.NAME + ".1").exists()
     turns = [r["turn"] for r in log.read(path)]
     assert turns == sorted(turns) and turns[-1] == 5 and len(turns) < 6
+
+
+def test_log_read_skips_a_byte_order_mark(tmp_path):
+    path = tmp_path / log.NAME
+    path.write_bytes(b"\xef\xbb\xbf" + b'{"turn": 1}\n')  # as an editor on Windows may save it
+    assert log.read(path) == [{"turn": 1}]
+
+
+def test_a_cut_off_last_line_does_not_swallow_the_next_record(tmp_path):
+    path = tmp_path / log.NAME
+    log.write(path, {"turn": 1})
+    with open(path, "a", encoding="utf-8") as handle:
+        handle.write('{"turn": 2, "pad')  # a write that a crash cut off
+    log.write(path, {"turn": 3})
+    assert log.read(path) == [{"turn": 1}, {"turn": 3}]
+
+
+def test_threads_that_rotate_at_once_move_only_full_files(tmp_path, monkeypatch):
+    monkeypatch.setattr(log, "MAX_BYTES", 2_000)
+    moved, replace = [], os.replace
+
+    def watched_replace(src, dst):
+        time.sleep(0.002)  # widens the window between the size check and the move
+        moved.append(os.stat(src).st_size)
+        replace(src, dst)
+    monkeypatch.setattr(log.os, "replace", watched_replace)
+    path = tmp_path / log.NAME
+    threads = [threading.Thread(target=lambda: [log.write(path, {"pad": "x" * 50}) for _ in range(100)])
+               for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert moved and min(moved) >= 2_000  # a small file moved over .1 throws away a full one
 
 
 def test_reading_a_missing_log_is_empty(tmp_path):

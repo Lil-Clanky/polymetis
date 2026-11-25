@@ -106,7 +106,7 @@ A line of `decisions.jsonl` has these fields.
 | `tip`, `tip_given` | The skills a tip would name, and whether it was sent |
 | `local`, `chosen` | The variant prepared for a local model, whether or not the router then sent the request there, and the skills a `lean` local request keeps |
 | `used_skills`, `used_tools`, `tool_errors` | The skills from the index that the model loaded with `skill_view`, by name or by a path such as `category/name`, leaving out loads that failed; the tool calls per tool, where a name that does not look like a tool's counts as `other`; and how many calls failed, as Hermes judges it, so a command that exits with an error code counts |
-| `api_calls`, `tokens_in`, `tokens_out` | Requests in the turn and the token counts the provider reported |
+| `api_calls`, `tokens_in`, `tokens_out` | The requests Hermes started in the turn, and the token counts the provider reported. A retry or fallback within one request, by Hermes or the provider's library, is not counted. |
 | `duration_ms`, `outcome` | The turn's length, and `completed`, `failed`, `interrupted` or Hermes's exit reason. A turn whose last request failed is `failed`. A turn that Hermes ended without saying how is `unknown`, and one still running when Hermes's process exits is `interrupted`. |
 | `correction`, `repeat` | Whether the message starts like a correction, with words such as "no", "actually", "that's wrong", "I meant", "nee" or "klopt niet", but not "no thanks" or "no worries", and whether it and the message before share at least 70% of their words |
 

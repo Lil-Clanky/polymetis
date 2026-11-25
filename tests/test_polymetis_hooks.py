@@ -125,6 +125,20 @@ def test_min_score_zero_still_needs_a_matching_skill(pm, tmp_path):
     assert (records(tmp_path)[0]["level"], records(tmp_path)[0]["level_reason"]) == ("none", "no_match")
 
 
+def test_an_empty_saved_index_is_no_index(pm, tmp_path):
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "index-cli.json").write_text("[]", encoding="utf-8")
+    turn("Please merge my pull request")
+    assert (records(tmp_path)[0]["level"], records(tmp_path)[0]["level_reason"]) == ("lean", "match")
+
+
+def test_report_names_only_skills_that_are_text(pm, tmp_path):
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "index-cli.json").write_text(json.dumps([{"name": "pdf"}, {"name": 5}, {"name": None}]),
+                                                      encoding="utf-8")
+    assert hooks.catalogs() == {"cli": ["pdf"]}
+
+
 def test_a_platform_level_wins(pm, tmp_path):
     pm["platform_levels"] = {"whatsapp": "full"}
     turn("Hello", platform="whatsapp")
@@ -530,8 +544,8 @@ def test_cli_report_says_when_it_cannot_read_the_log(pm, tmp_path):
     assert "cannot read its log" in out.getvalue()
 
 
-@pytest.mark.parametrize("days", ["0", "-1"])
-def test_cli_report_looks_back_a_day_or_more(days):
+@pytest.mark.parametrize("days", ["0", "-1", "9" * 400])
+def test_cli_report_needs_a_sensible_number_of_days(days):
     parser = argparse.ArgumentParser()
     cli.setup_parser(parser)
     with pytest.raises(SystemExit):
