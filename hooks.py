@@ -398,7 +398,8 @@ def on_session_end(session_id: str = "", turn_id: str = "", completed: Any = Non
             # the reason's name only: its error text can quote a message
             outcome = ("interrupted" if interrupted else "failed" if failed else "completed" if completed
                        else name.group(0) if name else "unknown")
-        record = _finish(session, turn, outcome)
+        # a failed turn ends at its last request, also when Hermes's TUI closes the session much later
+        record = _finish(session, turn, outcome, end=turn.seen if turn.failed and not completed else None)
     if _settings.log:
         log.write(log_path(), record)
 

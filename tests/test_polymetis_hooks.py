@@ -265,6 +265,17 @@ def test_a_failed_turn_is_logged_when_hermes_closes_the_session(pm, tmp_path, mo
     assert records(tmp_path)[-1]["turn"] == 2
 
 
+def test_a_failed_turn_that_the_tui_closes_later_ends_at_its_last_request(pm, tmp_path, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(hooks.time, "monotonic", lambda: clock[0])
+    start("Please merge my pull request")
+    clock[0] += 2
+    fail(retryable=False, retry_count=3, max_retries=3)
+    clock[0] += 300  # Hermes's TUI gateway closes the chat, with on_session_end and no turn id
+    hooks.on_session_end(session_id="s1", completed=False, interrupted=True)
+    assert [(r["outcome"], r["duration_ms"]) for r in records(tmp_path)] == [("failed", 2000)]
+
+
 def test_api_calls_counts_hermes_requests_and_not_their_retries(pm, tmp_path):
     start("Please merge my pull request")
     for number, retry in ((1, 0), (1, 1), (1, 0), (2, 0)):  # a retry, then a fallback, of the first request
