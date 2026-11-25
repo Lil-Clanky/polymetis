@@ -41,7 +41,7 @@ plugins:
 | `min_score` | `5` | The score a skill needs for a tip and for a `lean` session, from 0 to 1000. The default comes from the offline measurement in `evals/`. |
 | `max_tips` | `2` | The most skills one tip names, a whole number from 0 to 5 |
 | `pin` | `[]` | Skills that always rank first, and that a `lean` request for a local model keeps when the index has them |
-| `block` | `[]` | Skills that are never ranked or tipped |
+| `block` | `[]` | Skills that are never ranked or tipped, also when `pin` names them |
 | `platform_levels` | `{}` | A fixed level per gateway platform, such as `whatsapp: none` or `cli: full` |
 | `local_tools` | `clarify`, `memory`, `read_file`, `search_files`, `terminal`, `web_search`, `write_file` | The tools a local model keeps at `lean` and `none` |
 | `ablation.share` | `0` | The share of new sessions that run without skills, from 0 to 1. It starts when Hermes next loads the plugin, as after a restart of Hermes or the gateway. |
@@ -58,6 +58,8 @@ With `apply: [tips]`, a turn whose best skill reaches `min_score` gets a hint su
 ```
 
 The hint names at most `max_tips` skills, and only skills that score at least half of the best one. Polymetis returns it from Hermes's `pre_llm_call` hook. Hermes appends it to the user message of that turn, and later requests repeat it. The model decides whether to load the skill. A session at `none` gets no tips, and neither does a session whose requests carry no skill index, as with Hermes's `skills` toolset off. A message with an image gets no tip, because on such a turn Hermes keeps the hint in the message the user sees. Until a session's first request, its first turn is ranked against the last index seen on its platform, which can be out of date just after a change to the skills.
+
+Whether tips help is still open. In the first live tests with free cloud models, the model loaded a tipped skill in 1 of 13 turns with a tip, and there the user had asked for that skill. Most tips name process skills such as `systematic-debugging` or `requesting-code-review`, and Hermes's own prompt tells the model not to load general process skills for work it already knows how to do. An [ablation](#ablation) and the report measure it on your own sessions.
 
 ### Smaller requests for local models
 
@@ -80,7 +82,7 @@ An ablation measures whether skills help. While `ablation.share` is above 0 and 
 
 Only a session that starts while the ablation runs gets a group: a session is new when it has no history yet. One that Polymetis first sees on a later turn may have used its skills already, so it gets none. A subagent that `delegate_task` starts gets its parent's group while the ablation runs, if Polymetis knows the parent, and none otherwise. When Hermes compresses a conversation and gives it a new session id, Polymetis follows it through Hermes's `post_compaction` hook, so the session keeps its group. A session leaves its group, and has its skills from then on, when the ablation ends or when Polymetis loses track of it: after a restart of Hermes or the gateway, or when it is not among the last 256 sessions that Polymetis saw. Its later turns, like those of every session without a group, have `arm: null`. The report compares both groups up to that point.
 
-While a plugin has an `llm_request` middleware, Hermes deep-copies every request several times, so Polymetis adds its middleware, and its `pre_tool_call` hook, only when Hermes loads it while an ablation is set. After setting `ablation.share`, restart Hermes or the gateway; until Hermes loads the plugin again, its log says that the ablation waits for a restart. When the ablation ends, by `until` or a `share` of 0, its sessions get their skills back from their next turn.
+While a plugin has an `llm_request` middleware, Hermes deep-copies every request several times, so Polymetis adds its middleware, and its `pre_tool_call` hook, only when Hermes loads it while an ablation is set. After setting `ablation.share`, restart Hermes or the gateway; until Hermes loads the plugin again, its log says that the ablation waits for a restart. When the ablation ends, by `until` or a `share` of 0, its sessions get their skills back from their next turn. The middleware stays until Hermes loads the plugin again, and with it the copying, so restart after an ablation too; while it stays, a new ablation starts at once. A reload of the plugins, as `hermes plugins disable` and `enable` cause in a running gateway, counts as a load.
 
 ## Files
 
@@ -105,7 +107,7 @@ A line of `decisions.jsonl` has these fields.
 | `candidates` | The 5 best skills with their scores |
 | `tip`, `tip_given` | The skills a tip would name, and whether it was sent |
 | `local`, `chosen` | The variant prepared for a local model, whether or not the router then sent the request there, and the skills a `lean` local request keeps |
-| `used_skills`, `used_tools`, `tool_errors` | The skills from the index that the model loaded with `skill_view`, by name or by a path such as `category/name`, leaving out loads that failed; the tool calls per tool, where a name that does not look like a tool's counts as `other`; and how many calls failed, as Hermes judges it, so a command that exits with an error code counts |
+| `used_skills`, `used_tools`, `tool_errors` | The skills from the index that the model loaded with `skill_view`, by name or by a path such as `category/name`, leaving out loads that failed; the tool calls per tool, where a name that does not look like a tool's counts as `other`; and how many calls failed, as Hermes judges it, so a command that exits with an error code counts. A call to a tool that Hermes does not have is not counted, because Hermes runs no hook for it |
 | `api_calls`, `tokens_in`, `tokens_out` | The requests Hermes started in the turn, and the token counts the provider reported. A retry or fallback within one request, by Hermes or the provider's library, is not counted. |
 | `duration_ms`, `outcome` | The turn's length, and `completed`, `failed`, `interrupted` or Hermes's exit reason. A turn whose last request failed is `failed`. A turn that Hermes ended without saying how is `unknown`, and one still running when Hermes's process exits is `interrupted`. |
 | `correction`, `repeat` | Whether the message starts like a correction, with words such as "no", "actually", "that's wrong", "I meant", "nee" or "klopt niet", but not "no thanks" or "no worries", and whether it and the message before share at least 70% of their search words; a message with fewer than three, such as "merge my PR", counts as no repeat. The first turn of a chat that Hermes continues in a new process has no message before it. |
