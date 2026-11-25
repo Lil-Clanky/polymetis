@@ -2,7 +2,8 @@
 
 For each task in tasks.json it ranks the skills of an index the way Polymetis does, over Hermes's 44
 bundled skills plus 0, 50 or all 141 optional skills as distractors, and prints how often the right
-skill comes first, in the top 3 and in the top 10, and how many tips a min_score would give.
+skill comes first, in the top 3 and in the top 10, and how many tips a min_score would give. It does so
+apart for the tasks written for this eval and for the live ones: messages a tester sent to Hermes.
 
 Usage: python evals/retrieval.py
 """
@@ -71,10 +72,21 @@ def _pct(part: int, whole: int) -> str:
     return f"{part}/{whole}"
 
 
+def of_set(tasks: list[dict], name: str) -> list[dict]:
+    return [t for t in tasks if t.get("set", "written") == name]
+
+
 def main() -> None:
-    skills, tasks = load()
+    skills, every = load()
+    for name in ("written", "live"):
+        tasks = of_set(every, name)
+        print(f"## {name.capitalize()} set: {len(tasks)} tasks, {sum(1 for t in tasks if not t['skills'])} of them "
+              "without a skill\n")
+        _tables(skills, tasks)
+
+
+def _tables(skills: list[dict], tasks: list[dict]) -> None:
     default = Settings().min_score
-    print(f"{len(tasks)} tasks, {sum(1 for t in tasks if not t['skills'])} of them without a skill.\n")
     print("| Index | Language | Top 1 | Top 3 | Top 10 |")
     print("|---|---|---|---|---|")
     for extra in DISTRACTORS:
@@ -91,6 +103,7 @@ def main() -> None:
             m = measure(skills, tasks, extra, threshold)
             print(f"| {threshold:g} | {44 + extra} skills | {_pct(m['right_tips'], m['tasks'])} | "
                   f"{_pct(m['wrong_tips'], len(tasks))} | {_pct(m['quiet_none'], m['none_tasks'])} |")
+    print()
 
 
 if __name__ == "__main__":

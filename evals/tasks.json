@@ -46,5 +46,20 @@
 {"id": "nl-none-how-are-you", "lang": "nl", "text": "Hoe gaat het met je?", "skills": []},
 {"id": "nl-none-capital", "lang": "nl", "text": "Wat is de hoofdstad van Australië?", "skills": []},
 {"id": "nl-none-thanks", "lang": "nl", "text": "Bedankt, dat was duidelijk!", "skills": []},
-{"id": "nl-none-sum", "lang": "nl", "text": "Hoeveel is 17 keer 23?", "skills": []}
+{"id": "nl-none-sum", "lang": "nl", "text": "Hoeveel is 17 keer 23?", "skills": []},
+{"id": "live-t03", "set": "live", "lang": "en", "text": "Help me debug why `python3 -m unittest` fails in this repo.", "skills": ["systematic-debugging"]},
+{"id": "live-t05", "set": "live", "lang": "en", "text": "Commit the fix on a new branch fix-mean and open a pull request on GitHub for it.", "skills": ["github"]},
+{"id": "live-t06", "set": "live", "lang": "nl", "text": "Kun je een PR maken voor deze fix?", "skills": ["github"]},
+{"id": "live-t07", "set": "live", "lang": "en", "text": "Can you review this pull request diff before I merge it?\n\n```diff\n--- a/stats.py\n+++ b/stats.py\n@@ -14,3 +14,12 @@ def median(values):\n     if len(ordered) % 2:\n         return ordered[mid]\n     return (ordered[mid - 1] + ordered[mid]) / 2\n+\n+\n+def variance(values):\n+    \"\"\"Population variance.\"\"\"\n+    m = mean(values)\n+    total = 0\n+    for v in values:\n+        total += (v - m) ** 2\n+    return total / len(values) - 1\n```", "skills": ["github", "requesting-code-review"]},
+{"id": "live-t14", "set": "live", "lang": "en", "text": "I'm debugging a weird IndexError in stats.median when the list is empty, can you help?", "skills": ["systematic-debugging"]},
+{"id": "live-t16", "set": "live", "lang": "en", "text": "Can you open a PR for this fix?", "skills": ["github"]},
+{"id": "live-t17", "set": "live", "lang": "en", "text": "Use the GitHub CLI: open a pull request on GitHub from branch fix-median.", "skills": ["github"]},
+{"id": "live-t24", "set": "live", "lang": "nl", "text": "Kun je deze code reviewen voordat ik merge?\n\n```diff\n--- a/stats.py\n+++ b/stats.py\n@@ -1,3 +1,9 @@\n \"\"\"Tiny statistics helpers.\"\"\"\n \n \n+def load_thresholds(path):\n+    f = open(path)\n+    data = f.read().split(\",\")\n+    return [int(x) for x in data]\n+\n+\n def mean(values):\n```", "skills": ["requesting-code-review"]},
+{"id": "live-p2", "set": "live", "lang": "en", "text": "Write a plan for next week: finish the stats module, review two PRs, and prepare the demo on Friday.", "skills": ["weekly-review-planning"]},
+{"id": "live-s1", "set": "live", "lang": "en", "text": "Please load the github skill first, then tell me the exact gh command to open a draft pull request from branch fix-median into main. Don't run it.", "skills": ["github"]},
+{"id": "live-t01", "set": "live", "lang": "en", "text": "How do I read a large CSV file in Python without loading it all into memory?", "skills": []},
+{"id": "live-t19", "set": "live", "lang": "en", "text": "Add a new function to stats.py that computes the mode, with a test.", "skills": []},
+{"id": "live-t10", "set": "live", "lang": "en", "text": "Good morning! How are you?", "skills": []},
+{"id": "live-t23", "set": "live", "lang": "en", "text": "Thanks for all the help today! Any tips for staying focused in the afternoon?", "skills": []},
+{"id": "live-p1", "set": "live", "lang": "en", "text": "Good evening! Long day today.", "skills": []}
 ]

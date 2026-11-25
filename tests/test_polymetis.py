@@ -176,6 +176,17 @@ def test_word_forms_meet():
     assert {search._stem(w) for w in ("merge", "merges", "merging", "merged")} == {"merg"}
     assert search._stem("remind") == search._stem("reminders") == "remind"
     assert search._stem("notes") != search._stem("not") and search._stem("user") == "user"
+    assert search._stem("reminder") == "remind" and search._stem("merger") != search._stem("merge")
+    assert search._stem("debugging") == search._stem("debug") and search._stem("installing") == "install"
+    assert search._stem("news") != search._stem("new")
+
+
+def test_search_words_leave_out_noise():
+    assert search.words("Open pull requests and PRs") == ["open", "pr", "pr"]
+    # no contraction tails, digits or lower-case single letters, but X, the platform, stays
+    assert search.words("Don't post github's diff on X; run git commit -m 2 b/") == \
+        ["don", "post", "github", "diff", "x", "run", "git", "commit"]
+    assert search.words("Please read the file and help me make a new one") == ["one"]
 
 
 def test_rank_puts_the_matching_skill_first():

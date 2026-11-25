@@ -232,12 +232,12 @@ def fail(session="s1", turn_id="t", **kw):
 def test_a_turn_that_fails_at_the_provider_is_logged_when_the_next_turn_starts(pm, tmp_path, monkeypatch):
     clock = [1000.0]
     monkeypatch.setattr(hooks.time, "monotonic", lambda: clock[0])
-    start("Please merge my pull request")
+    start("Please merge my pull request into main")
     clock[0] += 2
     fail(retryable=False, retry_count=3, max_retries=3)  # Hermes gives up and ends the turn without on_session_end
     clock[0] += 3600  # the user writes again an hour later
-    hooks.on_pre_llm_call(session_id="s1", turn_id="t2", user_message="Please merge my pull request", platform="cli",
-                          model="m", is_first_turn=False)
+    hooks.on_pre_llm_call(session_id="s1", turn_id="t2", user_message="Please merge my pull request into main",
+                          platform="cli", model="m", is_first_turn=False)
     hooks.on_session_end(session_id="s1", turn_id="t2", completed=True)
     first, second = records(tmp_path)
     assert (first["turn"], first["outcome"], first["duration_ms"]) == (1, "failed", 2000)

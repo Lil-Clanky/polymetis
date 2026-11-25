@@ -9,30 +9,45 @@ from .catalog import Skill
 
 K1, B = 1.2, 0.75
 NAME_WEIGHT = 2  # a word in a skill's name counts as often as this
-_WORD = re.compile(r"[a-z0-9]+")
+# a word, but not the tail of a contraction or possessive: "don't" gives "don", "github's" gives "github"
+_WORD = re.compile(r"(?<![a-z0-9]['\u2019])[a-z0-9]+", re.I)
+_PULL_REQUEST = re.compile(r"\bpull[ -]requests?\b", re.I)  # the words that GitHub's "PRs" stand for
+_NOT_PLURAL = frozenset({"news", "canvas", "lens"})  # an "s" that is no plural; without it news meets new
 STOPWORDS = frozenset("""
 a an and are as at be but by can could do does for from had has have how i if in into is it its me my
 of on or our please should so than that the their them then there these this those to us was we what
 when where which while who why will with would you your
 aan als bij dan dat de die dit een en er het hoe ik in is je jij kan kun maar me met mijn moet naar niet
 nog of om onze ook op te tot u van voor wat wie wil zijn
-""".split())
+add file files get help just like make need new read use want
+""".split())  # the last row: words of any request to an agent, which name no skill
 
 
 def _stem(word: str) -> str:
-    # shortcut: a few English suffixes only, so that "merges", "merging" and "merge" meet, and "remind"
-    # and "reminders"; a real stemmer is the upgrade when evals/ shows misses on word forms
-    for suffix, keep in (("ing", 4), ("ed", 4), ("s", 3)):
-        if word.endswith(suffix) and len(word) - len(suffix) >= keep:
-            word = word[:-len(suffix)]
-            break
-    if word.endswith("er") and len(word) >= 6:
+    # shortcut: a few English suffixes only, so that "merges", "merging" and "merge" meet, "debugging" and
+    # "debug", "PRs" and "PR", and "remind" and "reminders"; Porter's stemmer is the upgrade when evals/ shows
+    # misses on word forms
+    if word in _NOT_PLURAL:
+        return word
+    if word.endswith(("ing", "ed")):
+        stem = word[:-3] if word.endswith("ing") else word[:-2]
+        if len(stem) >= 4:  # "debugg" and "plann" lose a letter, "install" and "pass" keep theirs
+            word = stem[:-1] if stem[-1] == stem[-2] and stem[-1] not in "lsz" else stem
+    elif word.endswith("s") and not word.endswith(("ss", "us")) and len(word) >= 3:
+        word = word[:-1]
+    # Porter's rule: "er" goes after a stem with two vowel-consonant runs, so "reminder" meets "remind"
+    # while "merger" stays apart from "merge"
+    if word.endswith("er") and len(re.findall(r"[aeiouy]+[^aeiouy]+", word[:-2])) > 1:
         word = word[:-2]
     return word[:-1] if len(word) >= 5 and word.endswith("e") else word
 
 
 def words(text: str) -> list[str]:
-    return [_stem(w) for w in _WORD.findall((text or "").lower()) if w not in STOPWORDS]
+    """The search words of a text: no stop words or bare numbers, and a single letter only as a capital, such as
+    X or the M of M&A, not the -m or the b/ of a command or a diff."""
+    found = _WORD.findall(_PULL_REQUEST.sub("pr", text or ""))
+    return [_stem(w.lower()) for w in found
+            if w.lower() not in STOPWORDS and (len(w) > 1 or w.isupper()) and not w.isdigit()]
 
 
 def _document(skill: Skill) -> list[str]:
