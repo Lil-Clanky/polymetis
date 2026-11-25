@@ -14,7 +14,7 @@ Hermes asks whether to enable it, and the default answer is no. Polymetis needs 
 
 ## What it does
 
-- **Search.** Hermes lists every enabled skill in its system prompt, with a name, a category and a short description. Polymetis ranks these skills against the turn's message with BM25, a word-matching score, and keeps the 10 best. A word in a skill's name counts double. Nothing leaves the machine for this.
+- **Search.** Hermes lists every enabled skill in its system prompt, with a name, a category and a short description. Polymetis ranks these skills against the turn's message with BM25, a word-matching score, and keeps the 10 best. A word in a skill's name counts double. Nothing leaves the machine for this. A notice that Hermes's gateway writes into a chat, such as the end of a background process, is not ranked.
 - **Level.** A session gets a level on its first turn that has a skill index to rank: `lean` when a skill reaches `min_score`, otherwise `none`. `full` comes only from `platform_levels`. The level stays for the session, so that a local model gets the same request on every turn and its prompt cache holds. A session that started at `none` because nothing matched moves to `lean` once, on the first later turn that matches a skill.
 - **Log.** One line per turn with names, scores, counts and reasons, never message text.
 
@@ -57,7 +57,7 @@ With `apply: [tips]`, a turn whose best skill reaches `min_score` gets a hint su
 <skill-hint>Relevant skill: github. Load one with skill_view if you need it.</skill-hint>
 ```
 
-The hint names at most `max_tips` skills, and only skills that score at least half of the best one. Polymetis returns it from Hermes's `pre_llm_call` hook. Hermes appends it to the user message of that turn, and later requests repeat it. The model decides whether to load the skill. A session at `none` gets no tips.
+The hint names at most `max_tips` skills, and only skills that score at least half of the best one. Polymetis returns it from Hermes's `pre_llm_call` hook. Hermes appends it to the user message of that turn, and later requests repeat it. The model decides whether to load the skill. A session at `none` gets no tips, and neither does a session whose requests carry no skill index, as with Hermes's `skills` toolset off. A message with an image gets no tip, because on such a turn Hermes keeps the hint in the message the user sees. Until a session's first request, its first turn is ranked against the last index seen on its platform, which can be out of date just after a change to the skills.
 
 ### Smaller requests for local models
 

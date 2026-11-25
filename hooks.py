@@ -95,13 +95,11 @@ def _catalog(session: Session) -> tuple | None:
     if session.platform not in STORE.catalogs:
         try:
             rows = json.loads(_catalog_file(session.platform).read_text(encoding="utf-8"))
-            skills = tuple(Skill(**row) for row in rows)
+            STORE.catalogs[session.platform] = tuple(Skill(**row) for row in rows)
         except (OSError, ValueError, TypeError):
             return None
-        if not skills:  # nothing to rank, as in a file that a hand edit emptied
-            return None
-        STORE.catalogs[session.platform] = skills
-    return STORE.catalogs.get(session.platform)
+    # empty: the platform's last request had no index; the session's own request decides then
+    return STORE.catalogs.get(session.platform) or None
 
 
 def _save_catalog(platform: str, skills: tuple) -> None:
@@ -194,13 +192,16 @@ def on_pre_llm_call(session_id: str = "", turn_id: str = "", user_message: Any =
                 session.level, session.level_reason = None, ""
             session.arm = None
         text = text_of(user_message)
+        if decide.is_internal(text):  # no user wrote it: nothing to rank, and no correction or repeat
+            text = ""
         session.turns += 1
         session.text = text
         session.current = turn = Turn(turn_id=turn_id or "", number=session.turns)
         turn.correction = session.turns > 1 and decide.is_correction(text)
         turn.repeat = decide.is_repeat(session.last_text, text)
         _search(s, session, turn)
-        if "tips" in s.apply and turn.tip and session.arm != "ablation":
+        # a message with parts, such as an image, would keep the hint in what the user sees
+        if "tips" in s.apply and turn.tip and session.arm != "ablation" and isinstance(user_message, str):
             turn.tip_given = True
             out = {"context": decide.hint(turn.tip)}
     if stale is not None and s.log:
@@ -217,14 +218,17 @@ def on_pre_api_request(session_id: str = "", turn_id: str = "", platform: str = 
     if turn is None:  # between turns, or a request of the background review
         return
     found = parse_index(text_of(system_prompt))
+    # a request without an index means a session without skills, as with Hermes's skills toolset off, except
+    # in the ablation arm, where Polymetis removed the index itself
+    known = found is not None or session.arm != "ablation"
     body = request.get("body") if isinstance(request, dict) else None
     body = body if isinstance(body, dict) else {}
     config = body.get("toolConfig")
     tools = config.get("tools") if isinstance(config, dict) else body.get("tools")  # Bedrock's, or the others'
     with STORE.lock:
         session.provider, session.model = provider or session.provider, model or session.model
-        if found is not None:
-            session.catalog = tuple(found)
+        if known:
+            session.catalog = tuple(found or ())
         STORE.remember_request(request_messages, session_id)
         turn.seen = time.monotonic()
         turn.api_calls += 1
@@ -235,7 +239,7 @@ def on_pre_api_request(session_id: str = "", turn_id: str = "", platform: str = 
             tool_count if isinstance(tool_count, int) else None
         if session.level is None:  # no index was known when the turn began; decide with this one
             _search(_settings, session, turn)
-    if found is not None:
+    if known:
         _save_catalog(session.platform, session.catalog)
 
 

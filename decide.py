@@ -55,6 +55,12 @@ def is_correction(text: str) -> bool:
     return bool(_CORRECTION.match(text or ""))
 
 
+def is_internal(text: str) -> bool:
+    """Whether Hermes's gateway wrote the message, such as the notice of a finished background process. Hermes
+    ends such a message with a line that starts like this (gateway/run_notifications.py)."""
+    return (text or "").rstrip().rpartition("\n")[2].startswith("[INTERNAL NOTIFICATION")
+
+
 def is_repeat(previous: str | None, text: str) -> bool:
     a, b = set(words(previous or "")), set(words(text))
     return len(a) >= 3 and len(b) >= 3 and len(a & b) / len(a | b) >= REPEAT_OVERLAP
