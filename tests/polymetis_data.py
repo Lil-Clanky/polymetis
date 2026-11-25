@@ -1,7 +1,8 @@
 """A system prompt and tools shaped like the ones Hermes sends (agent/prompt_builder.py), for the Polymetis tests."""
 
 INDEX = (
-    "You are Hermes, an assistant.\n\n"
+    "You are Hermes, an assistant. When you work out a non-trivial workflow, record it with skill_manage for "
+    "future reuse.\n\n"
     "## Skills\n"
     "Before replying, scan the skills below. If a skill matches or is even partially relevant to your task, "
     "you MUST load it with skill_view(name) and follow its instructions. Err on the side of loading.\n"
@@ -17,7 +18,9 @@ INDEX = (
     "(Categories marked [names only] are outside the current coding context, so their descriptions are "
     "omitted — the skills work normally and load with skill_view(name) as usual.)\n\n"
     "## Memory\n"
-    "The user likes short answers. The `hermes-agent` skill has the commands — load it with "
+    "The user likes short answers. Skills come first: when you learn something while doing a task — a "
+    "procedure or a pitfall — record it in the skill you used or built for the task (skill_manage), where it "
+    "loads only when relevant. Memory is the narrow exception. The `hermes-agent` skill has the commands — load it with "
     "skill_view(name='hermes-agent') before configuring Hermes. The docs are the reference."
 )
 

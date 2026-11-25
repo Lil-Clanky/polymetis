@@ -12,11 +12,13 @@ OPEN, CLOSE = "<available_skills>", "</available_skills>"
 HEADER = "## Skills\n"
 LAST_LINE = "Only proceed without loading a skill if genuinely none are relevant to the task."
 HINT = re.compile(r"\n*<skill-hint>.*?</skill-hint>", re.S)
-# shortcut: drops whole sentences that point at skill_view(, which matches Hermes's wording today;
-# a sentence with a dot inside the call would be cut short, revisit when the wording changes.
-# A match may start only where a sentence can: without that anchor the leading [^.\n]* is tried at
-# every position of a long line, which is quadratic.
-POINTER = re.compile(r"(?:^|(?<=[.\n])|(?<=[.\n][ \t]))[^.\n]*\bskill_view\([^)]*\)[^.\n]*\.?[ \t]?")
+# shortcut: drops whole sentences that point at skill_view( or name skill_manage, which matches Hermes's
+# wording today; a sentence with a dot inside would be cut short, revisit when the wording changes.
+# A match may start only where a sentence can, at a line's start or after ". ": without that anchor the
+# leading [^.\n]* is tried at every position of a long line, which is quadratic.
+_SENTENCE = r"(?:^|(?<=\n)|(?<=\.[ \t]))[^.\n]*{}[^.\n]*\.?[ \t]?"
+POINTER = re.compile(_SENTENCE.format(r"\bskill_view\([^)]*\)"))
+MANAGE = re.compile(_SENTENCE.format(r"\bskill_manage\b"))
 
 
 @dataclass(frozen=True)
@@ -91,19 +93,21 @@ def _without_block(text: str) -> str:
 
 
 def strip_skills(text: str) -> str:
-    """The system prompt without the skill index and without the sentences that point at skill_view."""
-    return POINTER.sub("", _without_block(text))
+    """The system prompt without the skill index and without the sentences that point at skill_view or
+    skill_manage."""
+    return MANAGE.sub("", POINTER.sub("", _without_block(text)))
 
 
 def keep_skills(text: str, names) -> str:
-    """The system prompt with an index of only the named skills, or without an index when none is left."""
+    """The system prompt with an index of only the named skills, or without an index when none is left. A
+    request with this index keeps skill_view only, so the sentences that name skill_manage go."""
     wanted = set(names)
     skills = [s for s in parse_index(text) or [] if s.name in wanted]
     span = _block(text)
     if span is None or not skills:
         return strip_skills(text)
     rows = "\n".join(f"  - {s.name}: {s.description}" if s.description else f"  - {s.name}" for s in skills)
-    return text[:span[0]] + OPEN + "\n" + rows + "\n" + CLOSE + text[span[1]:]
+    return MANAGE.sub("", text[:span[0]] + OPEN + "\n" + rows + "\n" + CLOSE + text[span[1]:])
 
 
 def strip_hints(text: str) -> str:

@@ -14,7 +14,7 @@ import yaml
 from polymetis_data import INDEX, TOOLS
 
 import polymetis
-from polymetis import catalog, cli, decide, hooks, log, sessions
+from polymetis import catalog, cli, decide, hooks, log, sessions, shape
 from polymetis.config import Settings
 
 SECRET = "zebracornflakes"  # a word that must never reach a file
@@ -261,6 +261,24 @@ def test_an_ablation_set_while_hermes_runs_waits_for_a_restart(pm, tmp_path, mon
     assert records(tmp_path)[0]["arm"] is None and "restart Hermes" in caplog.text
 
 
+def test_the_ablation_arm_cannot_call_the_skill_tools(pm, tmp_path):
+    pm["ablation.share"] = 1.0
+    start("Please merge my pull request")
+    for name in sorted(shape.SKILL_TOOLS):
+        out = hooks.on_pre_tool_call(tool_name=name, args={"name": "github-pr-workflow"}, session_id="s1", turn_id="t")
+        assert out["action"] == "block" and name in out["message"]
+    assert hooks.on_pre_tool_call(tool_name="terminal", args={}, session_id="s1", turn_id="t") is None
+    assert hooks.on_pre_tool_call(tool_name="skill_view", session_id="s1", turn_id="review") is None  # not its turn
+    hooks.on_post_tool_call(tool_name="skill_view", args={"name": "github-pr-workflow"}, session_id="s1", turn_id="t",
+                            status="blocked")
+    hooks.on_session_end(session_id="s1", completed=True)
+    rec = records(tmp_path)[0]
+    assert (rec["used_skills"], rec["used_tools"], rec["tool_errors"]) == ([], {"skill_view": 1}, 0)
+    pm["ablation.share"] = 1e-9  # a new session now lands in the normal group
+    start("Please merge my pull request", session="s2")
+    assert hooks.on_pre_tool_call(tool_name="skill_view", args={}, session_id="s2", turn_id="t") is None
+
+
 def test_middleware_leaves_a_normal_session_alone(pm):
     turn("Please merge my pull request")
     assert hooks.on_llm_request(request={"messages": []}, session_id="s1") is None
@@ -443,13 +461,14 @@ def test_register_wires_the_hooks_the_manifest_names(tmp_path, monkeypatch):
     polymetis.register(ctx)  # Hermes loads the plugin again
     assert at_exit == [hooks.on_exit]
     manifest = yaml.safe_load((Path(polymetis.__file__).parent / "plugin.yaml").read_text(encoding="utf-8"))
-    assert sorted(ctx.hooks) == sorted(manifest["provides_hooks"])
+    assert sorted(ctx.hooks) == sorted(set(manifest["provides_hooks"]) - {"pre_tool_call"})  # for an ablation only
     assert ctx.middleware == {} and hooks.ablation_ready is False  # Hermes copies every request while one is registered
     assert set(ctx.commands) == {"polymetis"} and hooks.log_path() == tmp_path / "pd" / log.NAME
     assert sys.modules["polytropos_router_hooks"].local_request["polymetis"] is hooks.shape_local
     during = FakeCtx(tmp_path / "pd", {"ablation.share": 0.25})
     polymetis.register(during)
     assert set(during.middleware) == {"llm_request"} and hooks.ablation_ready is True
+    assert sorted(during.hooks) == sorted(manifest["provides_hooks"])
     for fn in ctx.unload + during.unload:
         fn()
     assert "polymetis" not in sys.modules["polytropos_router_hooks"].local_request

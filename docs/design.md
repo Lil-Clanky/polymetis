@@ -117,10 +117,12 @@ turn, so they would be an opt-in of their own.
 ## Ablation
 
 With `ablation.share` above 0 and before `ablation.until`, that share of new sessions runs without
-skills: an `llm_request` middleware removes the skill index, the pointers to `skill_view` and the
-skill tools (`skills_list`, `skill_view`, `skill_manage`) from the requests of the session's turns, in
-the formats of chat completions, Anthropic, the Responses API and Bedrock. While an `llm_request`
-middleware is registered, Hermes deep-copies every request several times, so Polymetis registers it
+skills: an `llm_request` middleware removes the skill index, the sentences that point at `skill_view`
+or name `skill_manage`, and the skill tools (`skills_list`, `skill_view`, `skill_manage`) from the
+requests of the session's turns, in the formats of chat completions, Anthropic, the Responses API and
+Bedrock. Hermes runs a call to any of its tools, also one that the request left out, so a `pre_tool_call`
+hook blocks calls to the skill tools in those turns. While an `llm_request`
+middleware is registered, Hermes deep-copies every request several times, so Polymetis registers both
 only when an ablation is set while Hermes loads the plugin; a new ablation starts when Hermes next
 loads it, and an ended one gives its sessions their skills back from the next turn.
 

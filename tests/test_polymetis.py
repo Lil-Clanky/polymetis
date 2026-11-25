@@ -121,6 +121,7 @@ def test_strip_skills_leaves_no_index_and_no_pointer(prompt):
 def test_strip_skills_keeps_the_rest_of_the_prompt():
     out = catalog.strip_skills(INDEX)
     assert "The user likes short answers." in out and "The docs are the reference." in out
+    assert "Memory is the narrow exception. The docs are the reference." in out  # no sentences glued together
     assert "\n\n\n" not in out
 
 
@@ -135,6 +136,7 @@ def test_keep_skills_lists_only_the_named_skills():
     out = catalog.keep_skills(INDEX, ["ascii-art", "not-installed"])
     assert [s.name for s in catalog.parse_index(out)] == ["ascii-art"]
     assert "github-issues" not in out and "## Memory" in out
+    assert "skill_manage" not in out and "load it with skill_view(name)" in out  # a lean request has skill_view only
 
 
 def test_keep_skills_with_no_match_strips_the_index():
@@ -323,7 +325,7 @@ def test_without_skills_reads_each_format_hermes_sends():
     }
     for name, req in formats.items():
         out = json.dumps(shape.without_skills(req))
-        assert "skill_view" not in out and "<available_skills>" not in out, name
+        assert "skill_view" not in out and "skill_manage" not in out and "<available_skills>" not in out, name
         assert "terminal" in out and "You are Hermes" in out, name
         assert set(shape.without_skills(req)) == set(req), name  # the Responses API rejects a `messages` key
     assert shape.without_skills(formats["anthropic"])["system"][0]["cache_control"] == {"type": "ephemeral"}

@@ -273,7 +273,7 @@ def on_post_tool_call(tool_name: str = "", args: Any = None, session_id: str = "
             turn.tool_errors += 1
         name = args.get("name") if isinstance(args, dict) else None
         known = {skill.name for skill in session.catalog or ()}
-        if tool_name == "skill_view" and name in known and name not in turn.used_skills:
+        if tool_name == "skill_view" and status != "blocked" and name in known and name not in turn.used_skills:
             turn.used_skills.append(name)
 
 
@@ -367,6 +367,18 @@ def on_llm_request(request: Any = None, session_id: str = "", turn_id: str = "",
     if session is None or session.arm != "ablation" or not isinstance(request, dict) or _turn(session, turn_id) is None:
         return None
     return {"request": shape.without_skills(request), "source": "polymetis", "reason": "ablation"}
+
+
+@_safe
+def on_pre_tool_call(tool_name: str = "", session_id: str = "", turn_id: str = "", **kwargs) -> dict | None:
+    """With an ablation: a session in the ablation arm cannot call the skill tools, which its requests leave out.
+    Hermes runs a call to a tool that the request did not offer, so the middleware alone does not stop it."""
+    if tool_name not in shape.SKILL_TOOLS:
+        return None
+    session = STORE.get(session_id) if session_id else None
+    if session is None or session.arm != "ablation" or _turn(session, turn_id) is None:
+        return None
+    return {"action": "block", "message": f"Tool '{tool_name}' is not available in this session."}
 
 
 @_safe

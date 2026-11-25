@@ -45,6 +45,7 @@ def register(ctx) -> None:
     hooks.ablation_ready = hasattr(ctx, "register_middleware") and hooks._refresh_settings().ablation_active()
     if hooks.ablation_ready:
         ctx.register_middleware("llm_request", hooks.on_llm_request)
+        ctx.register_hook("pre_tool_call", hooks.on_pre_tool_call)
     _router_hooks()["polymetis"] = hooks.shape_local  # keyed, so a plugin reload replaces it
     if hasattr(ctx, "on_unload"):
         ctx.on_unload(lambda: _router_hooks().pop("polymetis", None))
