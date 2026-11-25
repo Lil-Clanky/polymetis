@@ -100,7 +100,8 @@ def _block(text: str) -> tuple[int, int] | None:
     Without that section, as in a Hermes that names it differently, the biggest block that starts a line counts,
     of equal ones the last, as context files are more likely to hold an example.
     shortcut: of two equal "## Skills" sections the first, as a client's own system prompt comes after the
-    index; revisit if a context file with a copy of that section shows up"""
+    index, and a description with that header and the opening tag on lines of their own hides the skills
+    before it; revisit if a context file with a copy of that section, or such a description, shows up"""
     return _best(text, [m.end() for m in SECTION.finditer(text)], last=False) or \
         _best(text, list(_line_starts(text, OPEN)), last=True)
 
