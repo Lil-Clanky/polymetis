@@ -66,44 +66,29 @@ def _skills(body: str) -> list[Skill]:
     return list({s.name: s for s in skills}.values())
 
 
-def _line_starts(text: str, tag: str):
-    """The positions where ``tag`` starts a line."""
-    i = text.find(tag)
-    while i >= 0:
-        if i == 0 or text[i - 1] == "\n":
-            yield i
-        i = text.find(tag, i + 1)
-
-
-def _best(text: str, starts: list[int], last: bool) -> tuple[int, int] | None:
-    """Of the blocks that open at ``starts`` and close at the next closing tag that starts a line, without
-    another of ``starts`` inside, the one with the most skills; of equal ones the last if ``last``."""
+def _block(text: str) -> tuple[int, int] | None:
+    """The span of Hermes's index: the block in Hermes's "## Skills" section, with its tags at the start of a
+    line. A skill's description may hold the tags further on, as Hermes writes descriptions as they are, and
+    context files before the index and memory after it may show blocks of their own. A prompt without that
+    section has no index, as with Hermes's skills off. Of the blocks that close before the next section opens,
+    the one with the most skills counts.
+    shortcut: of two equal sections the first, as the prompts that Hermes adds after the index, such as an API
+    client's, are more likely to repeat it than the context files before it; and a description with that header
+    and the opening tag on lines of their own hides the skills before it; revisit if either shows up"""
+    starts = [m.end() for m in SECTION.finditer(text)]
     best, end = None, -1
     for i, start in enumerate(starts):
-        if end < start:  # each search goes forward only, so many tags take linear time
+        if end < start:  # each search goes forward only, so many sections take linear time
             end = text.find("\n" + CLOSE, start)
             if end < 0:
                 break
             end += 1
-        if i + 1 < len(starts) and starts[i + 1] < end:
+        if i + 1 < len(starts) and starts[i + 1] < end:  # another section opens inside: this one is an unclosed copy
             continue
         size = len(_skills(text[start + len(OPEN):end]))
-        if best is None or size > best[0] or (last and size == best[0]):
+        if best is None or size > best[0]:
             best = (size, start, end + len(CLOSE))
     return best[1:] if best else None
-
-
-def _block(text: str) -> tuple[int, int] | None:
-    """The span of Hermes's index. Its tags start a line; a skill's description may hold them further on, as
-    Hermes writes descriptions as they are. Context files come before the index in the system prompt and memory
-    after it, and either may show a block of its own, so a block in Hermes's "## Skills" section comes first.
-    Without that section, as in a Hermes that names it differently, the biggest block that starts a line counts,
-    of equal ones the last, as context files are more likely to hold an example.
-    shortcut: of two equal "## Skills" sections the first, as a client's own system prompt comes after the
-    index, and a description with that header and the opening tag on lines of their own hides the skills
-    before it; revisit if a context file with a copy of that section, or such a description, shows up"""
-    return _best(text, [m.end() for m in SECTION.finditer(text)], last=False) or \
-        _best(text, list(_line_starts(text, OPEN)), last=True)
 
 
 def parse_index(system_text: str) -> list[Skill] | None:

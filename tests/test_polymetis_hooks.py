@@ -1,5 +1,6 @@
 import argparse
 import hashlib
+import importlib.util
 import io
 import json
 import logging
@@ -700,3 +701,71 @@ def test_cli_report_needs_a_sensible_number_of_days(days):
     cli.setup_parser(parser)
     with pytest.raises(SystemExit):
         parser.parse_args(["report", "--days", days])
+
+
+NO_SKILLS = "You are Hermes, an assistant.\n\n## Memory\nThe user likes short answers."  # as with skills off
+
+
+def test_a_session_whose_requests_have_no_index_drops_the_level_from_its_platform(pm, tmp_path):
+    pm["apply"] = ["tips"]
+    turn("Please merge my pull request")  # the platform's last index now has skills
+    first = turn("Merge the other pull request too", session="s2", system=NO_SKILLS)
+    later = turn("And merge the third pull request", session="s2", system=NO_SKILLS)
+    assert first is not None and later is None  # only its first turn, ranked before its first request
+    assert [(r["level"], r["level_reason"], r["chosen"]) for r in records(tmp_path)[1:]] == \
+        [("none", "no_index", []), ("none", "no_index", [])]
+
+
+def test_a_session_without_any_index_is_logged_as_having_none(pm, tmp_path):
+    turn("Please merge my pull request", system=NO_SKILLS)
+    assert (records(tmp_path)[0]["level"], records(tmp_path)[0]["level_reason"]) == ("none", "no_index")
+
+
+def test_a_platform_level_stays_in_a_session_without_an_index(pm, tmp_path):
+    pm["platform_levels"] = {"cli": "full"}
+    turn("Please merge my pull request", system=NO_SKILLS)
+    assert (records(tmp_path)[0]["level"], records(tmp_path)[0]["level_reason"]) == ("full", "platform:cli")
+
+
+def test_a_line_whose_chat_is_not_text_stays_out_of_the_report(pm, tmp_path):
+    turn("Please merge my pull request")
+    with open(tmp_path / "data" / log.NAME, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({**records(tmp_path)[0], "chat": ["not", "text"]}) + "\n")
+    assert "1 session, 1 turn." in report.render(log.read(tmp_path / "data" / log.NAME))
+
+
+def test_tokens_come_from_hermes_usage_when_it_cut_the_response_short(pm, tmp_path):
+    start("Please merge my pull request")
+    hooks.on_pre_api_request(session_id="s1", platform="cli", model="m", provider="p", system_prompt=INDEX,
+                             request_messages=messages("Please merge my pull request"),
+                             request={"method": "POST", "body": {"model": "m", "tools": TOOLS}})
+    hooks.on_post_api_request(session_id="s1", response_model="m", response={"_truncated": True, "preview": "{"},
+                              usage={"prompt_tokens": 100, "output_tokens": 20, "total_tokens": 120})
+    hooks.on_session_end(session_id="s1", completed=True, interrupted=False)
+    assert (records(tmp_path)[0]["tokens_in"], records(tmp_path)[0]["tokens_out"]) == (100, 20)
+
+
+def test_every_profile_keeps_its_own_router_hook(tmp_path, monkeypatch):
+    # Hermes loads the plugin once per profile, under a module name of its own for every profile after the first
+    root = Path(polymetis.__file__).parent
+    spec = importlib.util.spec_from_file_location("polymetis__home_x", root / "__init__.py",
+                                                  submodule_search_locations=[str(root)])
+    other = sys.modules[spec.name] = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(other)
+        for name in ("_get_config", "_data_dir", "_settings", "ablation_ready"):
+            monkeypatch.setattr(hooks, name, getattr(hooks, name))
+        mine, theirs = FakeCtx(tmp_path / "a"), FakeCtx(tmp_path / "b")
+        polymetis.register(mine)
+        other.register(theirs)
+        local = sys.modules["polytropos_router_hooks"].local_request
+        assert local["polymetis"] is hooks.shape_local and local["polymetis__home_x"] is other.hooks.shape_local
+        for fn in theirs.unload:
+            fn()
+        assert local["polymetis"] is hooks.shape_local and "polymetis__home_x" not in local
+        for fn in mine.unload:
+            fn()
+        assert "polymetis" not in local
+    finally:
+        for name in [n for n in sys.modules if n == spec.name or n.startswith(spec.name + ".")]:
+            del sys.modules[name]

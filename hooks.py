@@ -240,6 +240,7 @@ def on_pre_api_request(session_id: str = "", turn_id: str = "", platform: str = 
     tools = config.get("tools") if isinstance(config, dict) else body.get("tools")  # Bedrock's, or the others'
     with STORE.lock:
         session.provider, session.model = provider or session.provider, model or session.model
+        first = session.catalog is None  # the session's first request in this process
         if known:
             session.catalog = tuple(found or ())
         STORE.remember_request(request_messages, session_id)
@@ -253,18 +254,21 @@ def on_pre_api_request(session_id: str = "", turn_id: str = "", platform: str = 
             tool_count if isinstance(tool_count, int) else None
         if session.level is None:  # no index was known when the turn began; decide with this one
             _search(_settings, session, turn)
+        if known and first and found is None and session.level_reason in ("match", "no_match"):
+            # no index in the session's own request, as with skills off: a level from ranking does not fit it
+            session.level, session.level_reason, session.chosen = "none", "no_index", ()
     if known:
         _save_catalog(session.platform, session.catalog)
 
 
 @_safe
 def on_post_api_request(session_id: str = "", turn_id: str = "", response_model: Any = None, response: Any = None,
-                        **kwargs) -> None:
+                        usage: Any = None, **kwargs) -> None:
     turn = _turn(STORE.get(session_id) if session_id else None, turn_id)
     if turn is None:
         return
     response = response if isinstance(response, dict) else {}
-    usage = response.get("usage")
+    usage = usage if isinstance(usage, dict) else response.get("usage")  # Hermes cuts a big response short, not this
     with STORE.lock:
         turn.failed, turn.seen = False, time.monotonic()
         answered = str(response_model or response.get("model") or "")
@@ -457,8 +461,10 @@ def shape_local(request: Any, slot: Any) -> dict | None:
         return None
     _, session = found
     with STORE.lock:
-        name, shaped = shape.fit(request, session.level or "full", fits, skills=session.chosen,
-                                 local_tools=s.local_tools)
+        level, chosen = session.level or "full", session.chosen
+    # outside the lock, which other sessions' hooks wait for: the variants of a big request take a while
+    name, shaped = shape.fit(request, level, fits, skills=chosen, local_tools=s.local_tools)
+    with STORE.lock:
         if session.current is not None:
             session.current.local = name
     return None if name == "full" else {"request": shaped, "variant": name}

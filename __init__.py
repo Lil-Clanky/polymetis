@@ -45,6 +45,8 @@ def register(ctx) -> None:
     if hooks.ablation_ready:
         ctx.register_middleware("llm_request", hooks.on_llm_request)
         ctx.register_hook("pre_tool_call", hooks.on_pre_tool_call)
-    _router_hooks()["polymetis"] = hooks.shape_local  # keyed, so a plugin reload replaces it
-    if hasattr(ctx, "on_unload"):
-        ctx.on_unload(lambda: _router_hooks().pop("polymetis", None))
+    # keyed by module, as Hermes loads the plugin once per profile under its own name; a reload replaces it
+    shape_local = hooks.shape_local
+    _router_hooks()[__name__] = shape_local
+    if hasattr(ctx, "on_unload"):  # leaves a hook that a reload put there since
+        ctx.on_unload(lambda: _router_hooks().pop(__name__) if _router_hooks().get(__name__) is shape_local else None)

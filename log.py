@@ -11,8 +11,9 @@ NAME = "decisions.jsonl"
 _TEXT = (str, type(None))
 _COUNT = (int, float, type(None))
 # the fields the report reads, with the types Polymetis writes; a hand edit or an older format may differ
-_TYPES = {"time": (int, float), "session": _TEXT, "platform": _TEXT, "level": _TEXT, "level_reason": _TEXT, "local": _TEXT,
-          "outcome": _TEXT, "tool_errors": _COUNT, "tokens_in": _COUNT, "tokens_out": _COUNT}
+_TYPES = {"time": (int, float), "session": _TEXT, "chat": _TEXT, "platform": _TEXT, "level": _TEXT,
+          "level_reason": _TEXT, "local": _TEXT, "outcome": _TEXT, "tool_errors": _COUNT, "tokens_in": _COUNT,
+          "tokens_out": _COUNT}
 _NAME_LISTS = ("answered_by", "tip", "chosen", "used_skills")
 # shortcut: guards the threads of one process; two Hermes processes on one profile can still rotate at the same
 # moment and lose the older file, use a file lock if that shows up

@@ -168,9 +168,10 @@ def test_a_copy_of_the_index_after_it_is_not_the_index(copy):
     assert "The user likes short answers." in catalog.strip_skills(prompt)
 
 
-def test_without_hermes_skills_section_the_biggest_block_is_the_index():
-    renamed = INDEX.replace("## Skills\n", "## Skill index\n")  # as a later Hermes might name it
-    assert catalog.parse_index("An example:\n" + EXAMPLE + renamed) == catalog.parse_index(INDEX)
+def test_without_hermes_skills_section_the_prompt_has_no_index():
+    prompt = "# Rules\nAn example of the index:\n" + EXAMPLE + "MARKER-AFTER: answer in English."  # skills off
+    assert catalog.parse_index(prompt) is None
+    assert catalog.strip_skills(prompt) == prompt and catalog.keep_skills(prompt, ["zz-billing"]) == prompt
 
 
 def test_finding_the_index_takes_linear_time_on_many_sections():
