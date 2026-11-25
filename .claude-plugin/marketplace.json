@@ -1,0 +1,14 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "polymetis",
+  "description": "Points Claude at the installed skill that fits each message",
+  "owner": {"name": "Lil-Clanky", "url": "https://github.com/Lil-Clanky"},
+  "plugins": [
+    {
+      "name": "polymetis",
+      "description": "Points Claude at the installed skill that fits each message, from every skill's full description, and logs what it decided without message text",
+      "source": "./",
+      "category": "productivity"
+    }
+  ]
+}

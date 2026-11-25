@@ -1,5 +1,7 @@
 """The decision log: one JSON object per line, in a file only the user can read."""
 
+from __future__ import annotations
+
 import contextlib
 import json
 import os

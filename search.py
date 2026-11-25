@@ -1,5 +1,7 @@
 """BM25 over the skills of an index: name, category and description, all local."""
 
+from __future__ import annotations
+
 import math
 import re
 from collections import Counter

@@ -5,6 +5,8 @@ skill, under ``category:`` headers, or a ``category [names only]: a, b`` row for
 the coding context (agent/prompt_builder.py, ``_render_skills_index``).
 """
 
+from __future__ import annotations
+
 import re
 from dataclasses import dataclass
 
