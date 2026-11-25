@@ -17,7 +17,9 @@ MAX_FINGERPRINTS = 1024
 class Turn:
     turn_id: str
     number: int
-    started: float = field(default_factory=time.monotonic)
+    started: float = field(default_factory=lambda: time.monotonic())
+    seen: float = field(default_factory=lambda: time.monotonic())  # the turn's last hook: its end, if Hermes never ends it
+    failed: bool = False  # the turn's last request failed
     candidates: list[tuple[str, float]] = field(default_factory=list)
     tip: list[str] = field(default_factory=list)
     tip_given: bool = False
@@ -74,6 +76,11 @@ class Store:
             while len(self._sessions) > MAX_SESSIONS:
                 self._sessions.popitem(last=False)
             return session
+
+    def all(self) -> list[Session]:
+        """Every session, once, also when a compression gave it a second id."""
+        with self.lock:
+            return list({id(s): s for s in self._sessions.values()}.values())
 
     def remember_request(self, messages, session_id: str) -> None:
         key = fingerprint(messages)

@@ -86,7 +86,7 @@ While a plugin has an `llm_request` middleware, Hermes deep-copies every request
 
 Polymetis writes only in the data folder that Hermes gives it in the profile, `<HERMES_HOME>/plugin-data/agent-plugin-polymetis-1717164d/`, and only while `log` is on. The report ends with the log's path. Both files have mode 0600.
 
-- `decisions.jsonl`: one line per turn, written when Hermes ends the turn with its `on_session_end` hook. Hermes's `codex_app_server` mode ends a turn without that hook, so there the log gets a line only for a turn in progress when the CLI or TUI closes. At 5 MB it moves to `decisions.jsonl.1`, which replaces the older one.
+- `decisions.jsonl`: one line per turn, written when Hermes ends the turn with its `on_session_end` hook. Hermes ends some turns without that hook: after a request that failed for good, and every turn in its `codex_app_server` mode. Such a turn gets its line when the session's next turn starts, or when Hermes's process exits, with the time of the turn's last request or tool call. At 5 MB the log moves to `decisions.jsonl.1`, which replaces the older one.
 - `index-<platform>.json`: the names, categories and descriptions of the skills in the last index that Hermes sent on that platform. With it, the first turn of a new session can be ranked before Hermes sends that session's first request, also after a restart.
 
 A line of `decisions.jsonl` has these fields.
@@ -107,7 +107,7 @@ A line of `decisions.jsonl` has these fields.
 | `local`, `chosen` | The variant prepared for a local model, and the skills a `lean` local request keeps |
 | `used_skills`, `used_tools`, `tool_errors` | The skills from the index that the model loaded with `skill_view`; the tool calls per tool, where a name that does not look like a tool's counts as `other`; and how many calls failed |
 | `api_calls`, `tokens_in`, `tokens_out` | Requests in the turn and the token counts the provider reported |
-| `duration_ms`, `outcome` | The turn's length, and `completed`, `failed`, `interrupted` or Hermes's exit reason |
+| `duration_ms`, `outcome` | The turn's length, and `completed`, `failed`, `interrupted` or Hermes's exit reason. A turn whose last request failed is `failed`. A turn that Hermes ended without saying how is `unknown`, and one still running when Hermes's process exits is `interrupted`. |
 | `correction`, `repeat` | Whether the message starts like a correction, with words such as "no", "actually", "nee" or "klopt niet", and whether it and the message before share at least 70% of their words |
 
 Polymetis keeps the text of the current and the previous message in memory only, for the search and these two fields. It makes no network calls. Hermes's background review, which looks back at a turn with the same session id, counts in no turn.

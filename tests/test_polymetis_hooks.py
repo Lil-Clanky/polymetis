@@ -1,4 +1,5 @@
 import argparse
+import atexit
 import hashlib
 import io
 import json
@@ -129,6 +130,56 @@ def test_corrections_and_repeats_are_counted(pm, tmp_path):
     turn("No, merge the open pull request now", first="merge the open pull request now")
     first, second = records(tmp_path)
     assert first["correction"] is False and second["correction"] is True and second["repeat"] is True
+
+
+def fail(session="s1", turn_id="t", **kw):
+    """A request of the turn that the provider refused, as Hermes reports it."""
+    hooks.on_pre_api_request(session_id=session, turn_id=turn_id, system_prompt=INDEX,
+                             request_messages=messages("hi"), request={"body": {"tools": TOOLS}})
+    hooks.on_api_request_error(session_id=session, turn_id=turn_id, status_code=429, **kw)
+
+
+def test_a_turn_that_fails_at_the_provider_is_logged_when_the_next_turn_starts(pm, tmp_path, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(hooks.time, "monotonic", lambda: clock[0])
+    start("Please merge my pull request")
+    clock[0] += 2
+    fail(retryable=False, retry_count=3, max_retries=3)  # Hermes gives up and ends the turn without on_session_end
+    clock[0] += 3600  # the user writes again an hour later
+    hooks.on_pre_llm_call(session_id="s1", turn_id="t2", user_message="Please merge my pull request", platform="cli",
+                          model="m", is_first_turn=False)
+    hooks.on_session_end(session_id="s1", turn_id="t2", completed=True)
+    first, second = records(tmp_path)
+    assert (first["turn"], first["outcome"], first["duration_ms"]) == (1, "failed", 2000)
+    assert (second["turn"], second["outcome"], second["repeat"]) == (2, "completed", True)
+    assert second["time"] - first["time"] >= 3600
+
+
+def test_a_request_that_succeeds_after_an_error_leaves_the_turn_completed(pm, tmp_path):
+    start("Please merge my pull request")
+    fail(retryable=True)
+    api(messages("Please merge my pull request"))
+    hooks.on_session_end(session_id="s1", completed=True)
+    assert records(tmp_path)[0]["outcome"] == "completed"
+
+
+def test_hermes_closing_after_a_failed_request_logs_the_turn_as_failed(pm, tmp_path):
+    start("Please merge my pull request")
+    fail(retryable=False)
+    hooks.on_session_end(session_id="s1", completed=False, interrupted=True)  # the CLI's exit, without a turn id
+    assert records(tmp_path)[0]["outcome"] == "failed"
+
+
+def test_hermes_stopping_writes_the_turns_in_progress(pm, tmp_path):
+    start("Please merge my pull request", session="waiting")
+    fail(session="waiting", retryable=True)  # Hermes stops while it waits to retry
+    start("Draw some ascii art", session="busy")
+    hooks.on_post_compaction(session_id="busy-2", old_session_id="busy")  # one session under two ids
+    hooks.on_exit()
+    hooks.on_exit()  # a second call finds nothing left
+    assert sorted(r["outcome"] for r in records(tmp_path)) == ["failed", "interrupted"]
+    hooks.on_session_end(session_id="busy", completed=True)  # a late end of a turn already written
+    assert len(records(tmp_path)) == 2
 
 
 def test_the_ablation_arm_gets_no_skills(pm, tmp_path):
@@ -384,8 +435,13 @@ class FakeCtx:
 def test_register_wires_the_hooks_the_manifest_names(tmp_path, monkeypatch):
     for name in ("_get_config", "_data_dir", "_settings", "ablation_ready"):
         monkeypatch.setattr(hooks, name, getattr(hooks, name))  # register sets them; the test puts them back
+    at_exit = []  # not the real atexit: at the end of the tests it would write to the default Hermes folder
+    monkeypatch.setattr(atexit, "register", at_exit.append)
+    monkeypatch.setattr(atexit, "unregister", lambda fn: at_exit.remove(fn) if fn in at_exit else None)
     ctx = FakeCtx(tmp_path / "pd")
     polymetis.register(ctx)
+    polymetis.register(ctx)  # Hermes loads the plugin again
+    assert at_exit == [hooks.on_exit]
     manifest = yaml.safe_load((Path(polymetis.__file__).parent / "plugin.yaml").read_text(encoding="utf-8"))
     assert sorted(ctx.hooks) == sorted(manifest["provides_hooks"])
     assert ctx.middleware == {} and hooks.ablation_ready is False  # Hermes copies every request while one is registered

@@ -170,8 +170,12 @@ def on_pre_llm_call(session_id: str = "", turn_id: str = "", user_message: Any =
     s = _refresh_settings()
     if s.ablation_active() and not ablation_ready:
         _warn_once("ablation: restart Hermes to start it, the plugin adds what it needs when Hermes loads it")
+    out = stale = None
     with STORE.lock:
         session = STORE.get(session_id)
+        if session is not None and session.current is not None:  # Hermes ended that turn without on_session_end
+            turn = session.current
+            stale = _finish(session, turn, "failed" if turn.failed else "unknown", end=turn.seen)
         if session is None:
             if parent_session_id:  # a subagent that delegate_task started: its parent's group, if Polymetis knows it
                 parent = STORE.get(parent_session_id)
@@ -195,8 +199,10 @@ def on_pre_llm_call(session_id: str = "", turn_id: str = "", user_message: Any =
         _search(s, session, turn)
         if "tips" in s.apply and turn.tip and session.arm != "ablation":
             turn.tip_given = True
-            return {"context": decide.hint(turn.tip)}
-    return None
+            out = {"context": decide.hint(turn.tip)}
+    if stale is not None and s.log:
+        log.write(log_path(), stale)
+    return out
 
 
 @_safe
@@ -217,6 +223,7 @@ def on_pre_api_request(session_id: str = "", turn_id: str = "", platform: str = 
         if found is not None:
             session.catalog = tuple(found)
         STORE.remember_request(request_messages, session_id)
+        turn.seen = time.monotonic()
         turn.api_calls += 1
         turn.offered_skills = len(found) if found is not None else 0
         # the request's own tools, after any middleware; tool_count, Hermes's count of the agent's tools,
@@ -238,6 +245,7 @@ def on_post_api_request(session_id: str = "", turn_id: str = "", response_model:
     response = response if isinstance(response, dict) else {}
     usage = response.get("usage")
     with STORE.lock:
+        turn.failed, turn.seen = False, time.monotonic()
         answered = str(response_model or response.get("model") or "")
         if answered and answered not in turn.answered_by and len(turn.answered_by) < 3:
             turn.answered_by.append(answered)
@@ -258,6 +266,7 @@ def on_post_tool_call(tool_name: str = "", args: Any = None, session_id: str = "
     if turn is None or not isinstance(tool_name, str) or not tool_name:
         return
     with STORE.lock:
+        turn.seen = time.monotonic()
         # the model writes these names, so the log takes only a tool name's shape and the index's skill names
         turn.used_tools[tool_name if _TOOL_NAME.fullmatch(tool_name) else "other"] += 1
         if status == "error":
@@ -268,9 +277,12 @@ def on_post_tool_call(tool_name: str = "", args: Any = None, session_id: str = "
             turn.used_skills.append(name)
 
 
-def _record(session: Session, turn: Turn, s: Settings, outcome: str) -> dict:
+def _record(session: Session, turn: Turn, s: Settings, outcome: str, end: float | None = None) -> dict:
+    """The turn's log line; ``end`` is the monotonic time the turn ended, by default now."""
+    now = time.monotonic()
+    end = now if end is None else end
     return {
-        "time": round(time.time(), 3), "session": session.key, "turn": turn.number,
+        "time": round(time.time() - (now - end), 3), "session": session.key, "turn": turn.number,
         "platform": session.platform, "provider": session.provider, "model": session.model,
         "answered_by": turn.answered_by, "level": session.level, "level_reason": session.level_reason,
         "arm": session.arm, "apply": sorted(s.apply), "offered_skills": turn.offered_skills,
@@ -278,9 +290,26 @@ def _record(session: Session, turn: Turn, s: Settings, outcome: str) -> dict:
         "tip": turn.tip, "tip_given": turn.tip_given, "local": turn.local, "chosen": list(session.chosen),
         "used_skills": turn.used_skills, "used_tools": dict(turn.used_tools), "tool_errors": turn.tool_errors,
         "api_calls": turn.api_calls, "tokens_in": turn.tokens_in, "tokens_out": turn.tokens_out,
-        "duration_ms": int((time.monotonic() - turn.started) * 1000), "outcome": outcome,
+        "duration_ms": int((end - turn.started) * 1000), "outcome": outcome,
         "correction": turn.correction, "repeat": turn.repeat,
     }
+
+
+def _finish(session: Session, turn: Turn, outcome: str, end: float | None = None) -> dict:
+    """End the session's turn in progress; its text stays until the next turn, for the repeat signal."""
+    session.current = None
+    session.last_text, session.text = session.text, ""
+    return _record(session, turn, _settings, outcome, end)
+
+
+@_safe
+def on_api_request_error(session_id: str = "", turn_id: str = "", **kwargs) -> None:
+    """A request of the turn failed. After its last retry Hermes ends the turn without ``on_session_end``."""
+    turn = _turn(STORE.get(session_id) if session_id else None, turn_id)
+    if turn is None:
+        return
+    with STORE.lock:
+        turn.failed, turn.seen = True, time.monotonic()
 
 
 @_safe
@@ -292,13 +321,31 @@ def on_session_end(session_id: str = "", turn_id: str = "", completed: Any = Non
         turn = _turn(session, turn_id)
         if turn is None:  # no turn in progress, or the late end of another one
             return
-        session.current = None
-        session.last_text, session.text = session.text, ""
-        outcome = ("interrupted" if interrupted else "failed" if failed else "completed" if completed
-                   else str(turn_exit_reason or "unknown"))
-        record = _record(session, turn, _settings, outcome)
+        if turn.failed and not completed:  # Hermes gave up on its request, or stopped while it waited to retry
+            outcome = "failed"
+        else:
+            outcome = ("interrupted" if interrupted else "failed" if failed else "completed" if completed
+                       else str(turn_exit_reason or "unknown"))
+        record = _finish(session, turn, outcome)
     if _settings.log:
         log.write(log_path(), record)
+
+
+@_safe
+def on_exit() -> None:
+    """At the exit of Hermes's process: the turns it left in progress, such as one that waits to retry a request."""
+    if not STORE.lock.acquire(timeout=2):  # a thread that holds the lock must not hold up the exit
+        return
+    try:
+        records = []
+        for session in STORE.all():
+            if (turn := session.current) is not None:
+                records.append(_finish(session, turn, "failed" if turn.failed else "interrupted", end=turn.seen))
+    finally:
+        STORE.lock.release()
+    if _settings.log:
+        for record in records:
+            log.write(log_path(), record)
 
 
 @_safe

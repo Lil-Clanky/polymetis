@@ -40,8 +40,11 @@ anywhere, and it starts in a shadow mode that only measures.
 - `post_api_request` carries the normalized response with the model that answered and the usage.
 - `post_tool_call` carries `tool_name`, `args`, `session_id`, `turn_id` and `status`
   (`model_tools.py:708-722`). A `skill_view` call names the skill in `args.name`.
-- `on_session_end` runs at the end of every `run_conversation`, that is after every turn, with
-  `completed`, `failed`, `interrupted` and `turn_exit_reason` (`agent/turn_finalizer.py:912-925`).
+- `on_session_end` runs at the end of a `run_conversation` that reaches the turn finalizer, with
+  `completed`, `failed`, `interrupted` and `turn_exit_reason` (`agent/turn_finalizer.py:912-925`). A turn
+  whose request fails for good returns early without it (`agent/conversation_loop.py:1574-1576`, `:1746`),
+  as does every `codex_app_server` turn. `api_request_error` fires for each failed request
+  (`agent/turn_api_error.py:142`).
 - `post_compaction` fires once per committed compaction, with `old_session_id` set when the
   compression moved the conversation to a new session id (`agent/compaction_events.py:253-260`).
 - `llm_request` middleware may replace the provider kwargs and fails open
@@ -137,7 +140,8 @@ last one.
 ## Log
 
 `decisions.jsonl` in the plugin's data folder (`<HERMES_HOME>/plugin-data/agent-plugin-polymetis-1717164d/`), mode 0600,
-one line per turn, written at `on_session_end` (which Hermes's `codex_app_server` mode skips), rotated
+one line per turn, written at `on_session_end`, or for a turn that Hermes ends without it, at the session's
+next turn or at the process's exit, rotated
 to `decisions.jsonl.1` above 5 MB. It holds names, numbers and reasons,
 never message text:
 
