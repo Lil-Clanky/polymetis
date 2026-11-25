@@ -61,7 +61,7 @@ def _compare(records) -> list[str]:
     for name in ("normal", "ablation"):
         rs = arms.get(name, [])
         n = len(rs) or 1
-        sessions = len({r.get("session") for r in rs})
+        sessions = len({r.get("chat") or r.get("session") for r in rs})
         lines.append(
             f"  {name:<10} {sessions:>8} {len(rs):>6} {sum(r.get('tool_errors') or 0 for r in rs) / n:>11.2f} "
             f"{sum(bool(r.get('correction')) for r in rs) / n:>11.2f} {sum(bool(r.get('repeat')) for r in rs) / n:>7.2f} "
@@ -71,7 +71,7 @@ def _compare(records) -> list[str]:
         lines.append("  Subagents that delegate_task started, apart from the turns above:")
         for name in ("normal", "ablation"):
             rs = subagents.get(name, [])
-            n = len({r.get("session") for r in rs})
+            n = len({r.get("chat") or r.get("session") for r in rs})
             tokens = sum((r.get("tokens_in") or 0) + (r.get("tokens_out") or 0) for r in rs)
             lines.append(f"  {name:<10} {n:>8} subagents, {tokens / (n or 1):.0f} tokens each")
     if unseen:
@@ -89,7 +89,7 @@ def render(all_records, *, days: int = 30, catalogs: dict[str, list[str]] | None
                 "setting `log` is on and the plugin is enabled.")
     sessions = {}
     for r in records:
-        sessions[r.get("session")] = r  # the last record of a session holds its final level
+        sessions[r.get("chat") or r.get("session")] = r  # the last record of a chat holds its final level
     out = [f"Polymetis report, last {days} days: {_n(len(sessions), 'session')}, {_n(len(records), 'turn')}."]
 
     levels = Counter(r.get("level") or "undecided" for r in sessions.values())

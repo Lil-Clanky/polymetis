@@ -38,6 +38,7 @@ def register(ctx) -> None:
     ctx.register_hook("post_compaction", hooks.on_post_compaction)
     ctx.register_hook("api_request_error", hooks.on_api_request_error)
     ctx.register_hook("on_session_finalize", hooks.on_session_finalize)  # Hermes ends its processes past atexit
+    ctx.register_hook("subagent_stop", hooks.on_subagent_stop)
     # While any llm_request middleware is registered, Hermes deep-copies every request several times, so
     # Polymetis adds its own only while an ablation runs; one set later starts when Hermes loads the plugin again
     hooks.ablation_ready = hasattr(ctx, "register_middleware") and hooks._refresh_settings().ablation_active()

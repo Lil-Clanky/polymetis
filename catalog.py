@@ -19,8 +19,11 @@ HINT = re.compile(r"(?<!\n)\n*<skill-hint>Relevant skills?: [^<\n]*\. Load one w
 # A match may start only where a sentence can, at a line's start or after ". ": without that anchor the
 # leading [^.\n]* is tried at every position of a long line, which is quadratic.
 _SENTENCE = r"(?:^|(?<=\n)|(?<=\.[ \t]))[^.\n]*{}[^.\n]*\.?[ \t]?"
-POINTER = re.compile(_SENTENCE.format(r"\bskill_view\([^)\n]*\)"))  # a call on one line: [^)]* ate the lines after
+# a call on one line, [^)]* ate the lines after; and a short one, as an unclosed call scanned to the line's end
+POINTER = re.compile(_SENTENCE.format(r"\bskill_view\([^)\n]{0,200}\)"))
 MANAGE = re.compile(_SENTENCE.format(r"\bskill_manage\b"))
+# Hermes's skills section: its header, lines that start no other heading or block, then the opening tag
+SECTION = re.compile(r"^## Skills\n(?:(?!#|<available_skills>)[^\n]*\n)*?(?=<available_skills>\n)", re.M)
 
 
 @dataclass(frozen=True)
@@ -63,25 +66,43 @@ def _skills(body: str) -> list[Skill]:
     return list({s.name: s for s in skills}.values())
 
 
-def _block(text: str) -> tuple[int, int] | None:
-    """The span of Hermes's index. Context files come before it in the system prompt and memory after it, and
-    either may mention its tags: a block counts only with its opening tag at the start of a line and no other
-    opening tag inside, and of several, the one with the most skills wins.
-    shortcut: of equal ones the last, as context files are more likely to hold an example; an example longer than
-    the real index wins, revisit if one shows up"""
-    best, start, end = None, text.find(OPEN), -1
-    while start >= 0:
+def _line_starts(text: str, tag: str):
+    """The positions where ``tag`` starts a line."""
+    i = text.find(tag)
+    while i >= 0:
+        if i == 0 or text[i - 1] == "\n":
+            yield i
+        i = text.find(tag, i + 1)
+
+
+def _best(text: str, starts: list[int], last: bool) -> tuple[int, int] | None:
+    """Of the blocks that open at ``starts`` and close at the next closing tag that starts a line, without
+    another of ``starts`` inside, the one with the most skills; of equal ones the last if ``last``."""
+    best, end = None, -1
+    for i, start in enumerate(starts):
         if end < start:  # each search goes forward only, so many tags take linear time
-            end = text.find(CLOSE, start)
+            end = text.find("\n" + CLOSE, start)
             if end < 0:
                 break
-        after = text.find(OPEN, start + 1)
-        if (after < 0 or after > end) and (start == 0 or text[start - 1] == "\n"):
-            size = len(_skills(text[start + len(OPEN):end]))
-            if best is None or size >= best[0]:
-                best = (size, start, end + len(CLOSE))
-        start = after
+            end += 1
+        if i + 1 < len(starts) and starts[i + 1] < end:
+            continue
+        size = len(_skills(text[start + len(OPEN):end]))
+        if best is None or size > best[0] or (last and size == best[0]):
+            best = (size, start, end + len(CLOSE))
     return best[1:] if best else None
+
+
+def _block(text: str) -> tuple[int, int] | None:
+    """The span of Hermes's index. Its tags start a line; a skill's description may hold them further on, as
+    Hermes writes descriptions as they are. Context files come before the index in the system prompt and memory
+    after it, and either may show a block of its own, so a block in Hermes's "## Skills" section comes first.
+    Without that section, as in a Hermes that names it differently, the biggest block that starts a line counts,
+    of equal ones the last, as context files are more likely to hold an example.
+    shortcut: of two equal "## Skills" sections the first, as a client's own system prompt comes after the
+    index; revisit if a context file with a copy of that section shows up"""
+    return _best(text, [m.end() for m in SECTION.finditer(text)], last=False) or \
+        _best(text, list(_line_starts(text, OPEN)), last=True)
 
 
 def parse_index(system_text: str) -> list[Skill] | None:

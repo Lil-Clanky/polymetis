@@ -201,6 +201,7 @@ def on_pre_llm_call(session_id: str = "", turn_id: str = "", user_message: Any =
         text = text_of(user_message)
         if decide.is_internal(text):  # no user wrote it: nothing to rank, and no correction or repeat
             text = ""
+        session.chosen = tuple(n for n in session.chosen if n not in s.block)  # a block counts from the next turn
         session.turns += 1
         session.text = text
         session.current = turn = Turn(turn_id=turn_id or "", number=session.turns)
@@ -318,7 +319,8 @@ def _record(session: Session, turn: Turn, s: Settings, outcome: str, end: float 
     now = time.monotonic()
     end = now if end is None else end
     return {
-        "time": round(time.time() - (now - end), 3), "session": session.key, "turn": turn.number,
+        "time": round(time.time() - (now - end), 3), "session": session.key, "chat": session.chat or session.key,
+        "turn": turn.number,
         "platform": session.platform, "provider": session.provider, "model": session.model,
         "answered_by": turn.answered_by, "level": session.level, "level_reason": session.level_reason,
         "arm": session.arm, "apply": sorted(s.apply), "offered_skills": turn.offered_skills,
@@ -344,6 +346,8 @@ def _carry_on(session: Session, record: dict) -> None:
     check of the first turn has no message before it."""
     if isinstance(record.get("turn"), int):
         session.turns = record["turn"]
+    if isinstance(record.get("chat"), str):
+        session.chat = record["chat"]
     if record.get("level") in LEVELS and record.get("level_reason") != "ablation":
         session.level, session.level_reason = record["level"], record.get("level_reason") or ""
         session.upgraded = session.level_reason == "upgrade"
@@ -383,9 +387,10 @@ def on_session_end(session_id: str = "", turn_id: str = "", completed: Any = Non
 
 @_safe
 def on_session_finalize(session_id: str = "", **kwargs) -> None:
-    """Hermes closes a session: at the end of a one-shot run, when the CLI or a chat client exits, at ``/new``, and
-    for the sessions still busy when the gateway stops. The turn it left in progress gets its line here, such as
-    one that failed for good or waits to retry a request. Hermes ends its processes past ``atexit``."""
+    """Hermes closes a session: at ``/new``, when a client closes it, for a chat that no client shows any more after
+    ``sessions.orphan_end_grace_s`` in the gateway, and for the sessions still busy when the gateway stops. The turn
+    it left in progress gets its line here, such as one that failed for good or waits to retry a request. Hermes
+    ends its processes past ``atexit``."""
     session = STORE.get(session_id) if session_id else None
     with STORE.lock:
         turn = session.current if session is not None else None
@@ -394,6 +399,14 @@ def on_session_finalize(session_id: str = "", **kwargs) -> None:
         record = _finish(session, turn, "failed" if turn.failed else "interrupted", end=turn.seen)
     if _settings.log:
         log.write(log_path(), record)
+
+
+@_safe
+def on_subagent_stop(child_session_id: Any = None, **kwargs) -> None:
+    """A subagent that ``delegate_task`` started has returned. Hermes closes its session no other way, so a turn
+    of it that failed for good gets its line here."""
+    if isinstance(child_session_id, str) and child_session_id:
+        on_session_finalize(session_id=child_session_id)
 
 
 @_safe
@@ -406,7 +419,8 @@ def on_post_compaction(session_id: str = "", old_session_id: str = "", **kwargs)
         session = STORE.get(old_session_id)
         if session is not None and STORE.get(session_id) is None:
             STORE.add(session_id, session)
-            session.key = decide.session_key(session_id)  # a new process goes on with the chat under its newest id
+            # a new process goes on with the chat under its newest id, and the report counts it as one chat
+            session.chat, session.key = session.chat or session.key, decide.session_key(session_id)
 
 
 @_safe

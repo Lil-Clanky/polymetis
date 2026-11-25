@@ -39,7 +39,8 @@ class Turn:
 
 @dataclass
 class Session:
-    key: str
+    key: str  # of the id the session runs under
+    chat: str = ""  # of the id the chat started with, when a compression moved it to a new one
     platform: str = ""
     provider: str = ""
     model: str = ""

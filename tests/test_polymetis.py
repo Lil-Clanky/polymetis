@@ -143,6 +143,43 @@ def test_finding_the_index_takes_linear_time_on_many_tags():
     assert time.perf_counter() - started < 0.5
 
 
+@pytest.mark.parametrize("description", [
+    "How the <available_skills> block works",  # a tag further on in its line
+    "Notes on the index\n<available_skills>\nas Hermes writes it",  # a description of several lines
+    "Where </available_skills> ends the index",
+])
+def test_a_skill_description_may_hold_the_tags(description):
+    row = "  - ascii-art: Draw pictures out of text characters"
+    prompt = INDEX.replace(row, f"  - aaa-notes: {description}\n{row}")  # Hermes writes a description as it is
+    assert [s.name for s in catalog.parse_index(prompt)] == [
+        "github-pr-workflow", "github-issues", "aaa-notes", "ascii-art", "gif-search", "youtube-content"]
+    stripped, kept = catalog.strip_skills(prompt), catalog.keep_skills(prompt, ["ascii-art"])
+    assert "aaa-notes" not in stripped and "available_skills" not in stripped and "## Memory" in stripped
+    assert [s.name for s in catalog.parse_index(kept)] == ["ascii-art"] and "aaa-notes" not in kept
+
+
+@pytest.mark.parametrize("copy", [
+    INDEX[INDEX.index("## Skills"):INDEX.index("## Memory")],  # the whole section, as in a client's own prompt
+    INDEX[INDEX.index("<available_skills>"):INDEX.index("Only proceed")],  # the block alone
+])
+def test_a_copy_of_the_index_after_it_is_not_the_index(copy):
+    prompt = INDEX + "\n\nA client's own instructions:\n" + copy.replace("github-issues", "gitlab-issues")
+    assert catalog.parse_index(prompt) == catalog.parse_index(INDEX)
+    assert "The user likes short answers." in catalog.strip_skills(prompt)
+
+
+def test_without_hermes_skills_section_the_biggest_block_is_the_index():
+    renamed = INDEX.replace("## Skills\n", "## Skill index\n")  # as a later Hermes might name it
+    assert catalog.parse_index("An example:\n" + EXAMPLE + renamed) == catalog.parse_index(INDEX)
+
+
+def test_finding_the_index_takes_linear_time_on_many_sections():
+    text = "## Skills\n\n<available_skills>\n" * 50_000 + INDEX
+    started = time.perf_counter()
+    assert len(catalog.parse_index(text)) == 5
+    assert time.perf_counter() - started < 0.5
+
+
 @pytest.mark.parametrize("prompt", [INDEX, ONESHOT])
 def test_strip_skills_leaves_no_index_and_no_pointer(prompt):
     out = catalog.strip_skills(prompt)
@@ -163,6 +200,13 @@ def test_strip_skills_takes_linear_time_on_a_long_line():
     started = time.perf_counter()
     assert catalog.strip_skills(text) == text
     assert time.perf_counter() - started < 0.5  # a pattern tried at every position took 5 seconds here
+
+
+def test_strip_skills_takes_linear_time_on_unclosed_pointers():
+    line = "Note. Call skill_view(x then wait. " * 8_000  # 280 KB on one line of a context file
+    started = time.perf_counter()
+    assert catalog.strip_skills(line + "\n\n" + INDEX).startswith(line)
+    assert time.perf_counter() - started < 0.5  # each unclosed call scanned to the end of the line: 5 seconds
 
 
 def test_a_pointer_sentence_ends_at_its_line():

@@ -18,7 +18,7 @@ Remove it with `hermes plugins remove polymetis`. Hermes then also drops its set
 
 ## What it does
 
-- **Search.** Hermes lists every enabled skill in its system prompt, with a name, a category and a short description. Polymetis ranks these skills against the turn's message with BM25, a word-matching score, and keeps the 10 best. A word in a skill's name counts double. Nothing leaves the machine for this. A notice that Hermes's gateway writes into a chat, such as the end of a background process, is not ranked.
+- **Search.** Hermes lists every enabled skill in its system prompt, with a name, a category and a short description. Polymetis ranks these skills against the turn's message with BM25, a word-matching score, and keeps the 10 best. A word in a skill's name counts double. Nothing leaves the machine for this. A notice that Hermes's gateway marks as not written by the user, such as the end of a background process, is not ranked. Other turns that Hermes starts by itself, such as the next step toward a `/goal`, are ranked and logged like the user's messages.
 - **Level.** A session gets a level on its first turn that has a skill index to rank: `lean` when a skill reaches `min_score`, otherwise `none`. `full` comes only from `platform_levels`. The level stays for the session, so that a local model gets the same request on every turn and its prompt cache holds. When Hermes continues a chat in a new process, as after a restart or with the CLI's `--continue`, Polymetis takes the chat's turn count and level from its last line in the log. A session that started at `none` because nothing matched moves to `lean` once, on the first later turn that matches a skill.
 - **Log.** One line per turn with names, scores, counts and reasons, never message text.
 
@@ -45,7 +45,7 @@ plugins:
 | `min_score` | `5` | The score a skill needs for a tip and for a `lean` session, from 0 to 1000. The default comes from the offline measurement in `evals/`. |
 | `max_tips` | `2` | The most skills one tip names, a whole number from 0 to 5 |
 | `pin` | `[]` | Skills that always rank first, and that a `lean` request for a local model keeps when the index has them |
-| `block` | `[]` | Skills that are never ranked or tipped, also when `pin` names them |
+| `block` | `[]` | Skills that are never ranked or tipped, nor kept in a `lean` request, also when `pin` names them |
 | `platform_levels` | `{}` | A fixed level per gateway platform, such as `whatsapp: none` or `cli: full` |
 | `local_tools` | `clarify`, `memory`, `read_file`, `search_files`, `terminal`, `web_search`, `write_file` | The tools a local model keeps at `lean` and `none` |
 | `ablation.share` | `0` | The share of new sessions that run without skills, from 0 to 1. It starts when Hermes next loads the plugin, as after a restart of Hermes or the gateway. |
@@ -92,7 +92,7 @@ While a plugin has an `llm_request` middleware, Hermes deep-copies every request
 
 Polymetis writes only in the data folder that Hermes gives it in the profile, `<HERMES_HOME>/plugin-data/agent-plugin-polymetis-1717164d/`, and only while `log` is on. The report ends with the log's path. Both files have mode 0600.
 
-- `decisions.jsonl`: one line per turn, written when Hermes ends the turn with its `on_session_end` hook. Hermes ends some turns without that hook: after a request that failed for good, and every turn in its `codex_app_server` mode. Such a turn gets its line when the session's next turn starts, or when Hermes closes the session with its `on_session_finalize` hook, as at the end of a one-shot run, when a chat client exits or when the gateway stops, with the time of the turn's last request or tool call. At 5 MB the log moves to `decisions.jsonl.1`, which replaces the older one.
+- `decisions.jsonl`: one line per turn, written when Hermes ends the turn with its `on_session_end` hook. Hermes ends some turns without that hook: after a request that failed for good, and every turn in its `codex_app_server` mode. Such a turn gets its line, with the time of its last request or tool call, when the session's next turn starts, when the `delegate_task` call of a subagent returns, or when Hermes closes the session with its `on_session_finalize` hook, as at `/new`. Hermes's gateway closes a chat that no client shows any more after `sessions.orphan_end_grace_s`, 5 minutes by default, as after a one-shot run. A gateway that stops before then, and a cron job, leave such a turn without a line, so the report counts fewer failed turns than there were. A turn that is still running when the gateway stops gets its line as `interrupted`. At 5 MB the log moves to `decisions.jsonl.1`, which replaces the older one.
 - `index-<platform>.json`: the names, categories and descriptions of the skills in the last index that Hermes sent on that platform. With it, the first turn of a new session can be ranked before Hermes sends that session's first request, also after a restart.
 
 A line of `decisions.jsonl` has these fields.
@@ -100,7 +100,7 @@ A line of `decisions.jsonl` has these fields.
 | Field | Meaning |
 |---|---|
 | `time` | Unix time at the end of the turn |
-| `session` | 12 hex characters of a SHA-256 of Hermes's session id, of the new id after a compression that gave the chat one |
+| `session`, `chat` | 12 hex characters of a SHA-256 of Hermes's session id: `session` of the id the turn ran under, `chat` of the id the chat started with. A compression can give a chat a new id, and the report counts sessions by `chat`. |
 | `turn` | The turn's number in the session, as Polymetis counted it |
 | `platform`, `provider`, `model` | From Hermes's hooks |
 | `answered_by` | The models that the provider reported as answering, at most 3 |

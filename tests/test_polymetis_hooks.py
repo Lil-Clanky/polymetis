@@ -13,7 +13,7 @@ import yaml
 from polymetis_data import INDEX, TOOLS
 
 import polymetis
-from polymetis import catalog, cli, decide, hooks, log, sessions, shape
+from polymetis import catalog, cli, decide, hooks, log, report, sessions, shape
 from polymetis.config import Settings
 
 SECRET = "zebracornflakes"  # a word that must never reach a file
@@ -309,6 +309,16 @@ def test_hermes_closing_its_sessions_writes_the_turns_in_progress(pm, tmp_path):
     assert len(records(tmp_path)) == 2
 
 
+def test_a_subagent_whose_request_failed_is_logged_when_its_task_returns(pm, tmp_path):
+    turn("Please merge my pull request")
+    hooks.on_pre_llm_call(session_id="child", turn_id="c", user_message="Merge it", platform="subagent", model="m",
+                          is_first_turn=True, parent_session_id="s1")
+    fail(session="child", turn_id="c", retryable=False)  # Hermes gives up, and ends the subagent without a hook
+    hooks.on_subagent_stop(parent_session_id="s1", child_session_id="child", child_status="failed")
+    hooks.on_subagent_stop(parent_session_id="s1", child_session_id=None, child_status="completed")
+    assert [(r["platform"], r["outcome"]) for r in records(tmp_path)] == [("cli", "completed"), ("subagent", "failed")]
+
+
 def test_the_ablation_arm_gets_no_skills(pm, tmp_path):
     pm["apply"] = ["tips"]
     pm["ablation.share"] = 1.0
@@ -378,6 +388,7 @@ def test_a_session_keeps_its_group_when_a_compression_gives_it_a_new_id(pm, tmp_
     first, second = records(tmp_path)
     assert (first["arm"], second["arm"], second["turn"]) == ("ablation", "ablation", 2)
     assert second["session"] == decide.session_key("s2")  # the id that a new process continues the chat under
+    assert first["chat"] == second["chat"] == decide.session_key("s1")  # one chat, for the report
 
 
 def test_a_chat_continued_after_a_compression_gave_it_a_new_id_keeps_its_turns(pm, tmp_path):
@@ -389,6 +400,7 @@ def test_a_chat_continued_after_a_compression_gave_it_a_new_id_keeps_its_turns(p
     continue_turn("And now the third one", session="s1-b")
     hooks.on_session_end(session_id="s1-b", completed=True)
     assert [(r["turn"], r["level"]) for r in records(tmp_path)] == [(1, "lean"), (2, "lean"), (3, "lean")]
+    assert report.render(records(tmp_path)).startswith("Polymetis report, last 30 days: 1 session, 3 turns.")
 
 
 def test_an_ablation_set_while_hermes_runs_waits_for_a_restart(pm, tmp_path, monkeypatch, caplog):
@@ -537,6 +549,18 @@ def test_local_requests_get_the_session_variant(pm, tmp_path):
     assert small["variant"] == "bare" and "tools" not in small["request"]
     hooks.on_session_end(session_id="s1", completed=True)
     assert records(tmp_path)[-1]["local"] == "bare"
+
+
+def test_a_skill_blocked_after_the_session_chose_it_leaves_its_requests(pm, tmp_path):
+    pm["apply"] = ["local_tools"]
+    turn("Please merge my pull request")  # the session keeps github-pr-workflow for its lean requests
+    pm["block"] = ["github-pr-workflow"]  # a change counts from the next turn
+    start("Merge the other one too")
+    api(messages("Please merge my pull request"))
+    out = hooks.shape_local(router_request("Please merge my pull request"), {"window": 8192, "fits": lambda r: True})
+    assert "github-pr-workflow" not in json.dumps(out["request"])
+    hooks.on_session_end(session_id="s1", completed=True)
+    assert records(tmp_path)[-1]["chosen"] == []
 
 
 def test_local_requests_are_left_alone_without_apply_or_a_known_session(pm):

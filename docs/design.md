@@ -145,11 +145,15 @@ last one.
 
 `decisions.jsonl` in the plugin's data folder (`<HERMES_HOME>/plugin-data/agent-plugin-polymetis-1717164d/`), mode 0600,
 one line per turn, written at `on_session_end`, or for a turn that Hermes ends without it, at the session's
-next turn or at `on_session_finalize` (Hermes ends its processes with `os._exit`, past `atexit`), rotated
+next turn, at `subagent_stop` for a subagent, or at `on_session_finalize` (Hermes ends its processes with
+`os._exit`, past `atexit`). Hermes's gateway closes a chat without a client only after
+`sessions.orphan_end_grace_s`, and at its stop only the chats still running, so a failed turn of a one-shot
+run or a cron job can stay without a line. The log is rotated
 to `decisions.jsonl.1` above 5 MB. It holds names, numbers and reasons,
 never message text:
 
-`time`, `session` (12 hex characters of a SHA-256 of the session id), `turn`, `platform`,
+`time`, `session` (12 hex characters of a SHA-256 of the session id), `chat` (the same of the id the chat
+started with, which a compression can change), `turn`, `platform`,
 `provider`, `model`, `answered_by`, `level`, `level_reason`, `arm`, `apply`, `offered_skills`,
 `offered_tools`, `candidates` (top 5 with scores), `tip`, `tip_given`, `local` (the variant prepared
 for a local model), `chosen` (the session's skills for a `lean` local request), `used_skills`, `used_tools`, `tool_errors`, `api_calls`, `tokens_in`,
