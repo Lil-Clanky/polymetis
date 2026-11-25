@@ -141,10 +141,6 @@ def test_the_plugin_manifest_runs_the_hook_script_for_each_event():
     assert (root / "claude_code_hook.py").is_file() and manifest["name"] == "polymetis"
 
 
-def test_catalog_without_a_list_takes_what_is_on_disk():
-    assert claude_code.catalog(None, {"b:x": "X", "a": "A"}) == (Skill("a", "A"), Skill("b:x", "X", "b"))
-
-
 def test_a_tip_names_each_skill_with_its_description_cut_short():
     text = claude_code.tip_text([Skill("design:ux-copy", "Write and review UX copy"), Skill("long", "word " * 100),
                                  Skill("bare", "")])
@@ -179,11 +175,13 @@ def home(tmp_path):
     write(plugin / "skills/write-docs/SKILL.md", skill_md("write-docs", "Write documentation, READMEs and runbooks"))
     data = tmp_path / "data"
     write(data / "settings.json", json.dumps({"min_score": 0.5}))  # two skills score lower than many
+    # the list that an earlier session in this folder saw: Claude Code offers both skills
+    write(claude_code.project_listing(data, "/nowhere"), json.dumps({"content": "- rev:review-pr\n- rev:write-docs\n"}))
     return base, data
 
 
-def prompt(text: str, session: str = "s1", transcript: Path | None = None) -> dict:
-    return {"hook_event_name": "UserPromptSubmit", "session_id": session, "prompt": text, "cwd": "/nowhere",
+def prompt(text: str, session: str = "s1", transcript: Path | None = None, cwd: str = "/nowhere") -> dict:
+    return {"hook_event_name": "UserPromptSubmit", "session_id": session, "prompt": text, "cwd": cwd,
             "transcript_path": str(transcript or "/nowhere/t.jsonl")}
 
 
@@ -249,11 +247,34 @@ def test_the_transcript_list_limits_and_names_the_skills(home, tmp_path):
     assert run("UserPromptSubmit", prompt("Write documentation and runbooks", "s2", transcript), home) is None
 
 
-def test_a_new_session_starts_from_the_list_the_last_one_saw(home, tmp_path):
+def test_a_new_session_starts_from_the_list_the_last_one_saw_in_its_folder(home, tmp_path):
     transcript = write(tmp_path / "t.jsonl", listing_line("- builtin-deploy: Deploy the app to staging and production\n"))
-    run("UserPromptSubmit", prompt("hello", transcript=tmp_path / "not-yet.jsonl"), home)
-    run("Stop", {"session_id": "s1", "transcript_path": str(transcript)}, home)  # the transcript has its list now
-    assert "builtin-deploy" in context(run("UserPromptSubmit", prompt("Deploy the app to staging", "s2"), home))
+    run("UserPromptSubmit", prompt("hello", transcript=tmp_path / "not-yet.jsonl", cwd="/app"), home)
+    # the transcript has its list now
+    run("Stop", {"session_id": "s1", "transcript_path": str(transcript), "cwd": "/app"}, home)
+    assert "builtin-deploy" in context(run("UserPromptSubmit", prompt("Deploy the app to staging", "s2", cwd="/app"), home))
+    assert run("UserPromptSubmit", prompt("Deploy the app to staging", "s3", cwd="/other"), home) is None
+
+
+def test_a_session_keeps_its_own_list_while_another_runs(home, tmp_path):
+    a = write(tmp_path / "a.jsonl", listing_line("- deploy-a: Deploy the app to staging\n"))
+    b = write(tmp_path / "b.jsonl", listing_line("- deploy-b: Deploy the app to staging\n"))
+    run("UserPromptSubmit", prompt("hello", "a", a, cwd="/a"), home)
+    run("UserPromptSubmit", prompt("hello", "b", b, cwd="/b"), home)
+    assert "deploy-a" in context(run("UserPromptSubmit", prompt("Deploy the app to staging", "a", a, cwd="/a"), home))
+
+
+def test_without_any_list_there_is_no_tip(home):
+    # a skill on disk can belong to a disabled plugin: only a list says what Claude Code offers
+    assert run("UserPromptSubmit", prompt("Please review my pull request", cwd="/new-project"), home) is None
+    run("Stop", {"session_id": "s1"}, home)
+    [record] = log.read(home[1] / log.NAME)
+    assert record["candidates"] == [] and record["tip"] == []
+
+
+def test_a_skill_file_with_a_byte_order_mark_is_read(tmp_path):
+    skill = write(tmp_path / "SKILL.md", "\ufeff" + skill_md("bom", "Starts with a byte order mark"))
+    assert claude_code._describe(skill) == ("bom", "Starts with a byte order mark")
 
 
 def test_old_session_files_go(home):
@@ -287,6 +308,14 @@ def test_the_report_counts_tips_and_loaded_skills(home, capsys):
     out = capsys.readouterr().out
     assert "1 session, 1 turn." in out and "loaded a matching skill in 1 of 1 turns with a tip" in out
     assert "rev:review-pr 1" in out
+
+
+def test_the_report_reads_the_data_folder_when_the_command_passes_none(home, monkeypatch, capsys):
+    monkeypatch.setenv("CLAUDE_PLUGIN_DATA", str(home[1]))
+    run("UserPromptSubmit", prompt("Please review my pull request"), home)
+    run("Stop", {"session_id": "s1"}, home)
+    assert claude_code.main(["report", ""]) == 0
+    assert "1 session, 1 turn." in capsys.readouterr().out
 
 
 def test_the_report_leaves_out_what_only_hermes_logs():

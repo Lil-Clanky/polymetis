@@ -1,5 +1,6 @@
-"""A/B in Claude Code: each task once without and once with Polymetis, each run in a fresh folder with
-`claude -p` on one model. Runs that finished before are kept, so a stopped batch can go on.
+"""A/B in Claude Code: each task once without and once with Polymetis, with `claude -p` on one model, in one
+empty folder. A first prompt there lets Polymetis see the folder's skill list: it gives no tip without one. Runs
+that finished before are kept, so a stopped batch can go on.
 
 Usage: python run_ab.py TASKS.json PLUGIN_DIR OUT_DIR [--model sonnet] [--jobs 4] [--repeat 1]
 """
@@ -9,7 +10,6 @@ import json
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 # the host session's links: a test run should not talk to the app that this session runs in
@@ -21,7 +21,7 @@ def run(task: dict, arm: str, rep: int, args) -> str:
     out = Path(args.out) / f"{task['id']}.{rep}.{arm}.jsonl"
     if out.exists() and '"type":"result"' in out.read_text(encoding="utf-8", errors="replace"):
         return f"{out.name}: kept"
-    work = Path(tempfile.mkdtemp(prefix=f"{task['id']}-{arm}-", dir=Path(args.out) / "work"))
+    work = Path(args.out) / "work"
     cmd = ["claude", "-p", task["prompt"], "--model", args.model, "--output-format", "stream-json", "--verbose",
            "--allowedTools", "Skill", "--max-budget-usd", "2"]
     if arm == "on":
@@ -52,6 +52,9 @@ def main() -> None:
     tasks = json.loads(Path(args.tasks).read_text(encoding="utf-8"))
     if args.only:
         tasks = [t for t in tasks if t["id"] in args.only.split(",")]
+    env = {k: v for k, v in os.environ.items() if k not in DROP_ENV}
+    subprocess.run(["claude", "-p", "Say hi.", "--model", "haiku", "--plugin-dir", args.plugin, "--max-budget-usd", "0.5"],
+                   cwd=Path(args.out) / "work", stdin=subprocess.DEVNULL, capture_output=True, env=env, timeout=300)
     jobs = [(t, arm, rep) for rep in range(args.repeat) for t in tasks for arm in ("off", "on")]
     with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
         for line in pool.map(lambda j: run(*j, args), jobs):

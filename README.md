@@ -13,7 +13,7 @@ Polymetis reads each skill's full description from its `SKILL.md` on disk and ra
 
 > Installed skill that matches this request: engineering:deploy-checklist (Pre-deployment verification checklist. Use when about to ship a release, …). Load it with the Skill tool before you answer, unless it clearly does not fit.
 
-It names only skills that Claude Code offers in the session, each at most once per session, and it skips slash commands. Nothing leaves your machine. It needs no Hermes and no other plugin.
+It names only skills that Claude Code offers in the session, each at most once per session, and it skips slash commands. The first message in a project folder that Polymetis has not seen gets no tip: Claude Code records its skill list only after that message. Nothing leaves your machine. It needs no Hermes and no other plugin.
 
 ### Install
 

@@ -112,7 +112,7 @@ def config_dir() -> Path:
 
 def _describe(path: Path) -> tuple[str, str]:
     try:
-        with open(path, encoding="utf-8", errors="replace") as handle:
+        with open(path, encoding="utf-8-sig", errors="replace") as handle:
             fields = frontmatter(handle.read(32768))
     except OSError:
         return "", ""
@@ -167,11 +167,10 @@ def disk_skills(base: Path, cwd: Path | None) -> dict[str, str]:
     return found
 
 
-def catalog(listed: list[Skill] | None, disk: dict[str, str]) -> tuple[Skill, ...]:
+def catalog(listed: list[Skill], disk: dict[str, str]) -> tuple[Skill, ...]:
     """The skills to rank: the listed ones, with their full descriptions where the disk has them, under their
-    name or their bare name, as the desktop app keeps the skills it syncs. Without a list, every skill on disk."""
-    pairs = [(s.name, disk.get(s.name) or disk.get(s.name.partition(":")[2]) or s.description) for s in listed] \
-        if listed is not None else sorted(disk.items())
+    name or their bare name, as the desktop app keeps the skills it syncs."""
+    pairs = [(s.name, disk.get(s.name) or disk.get(s.name.partition(":")[2]) or s.description) for s in listed]
     return tuple(Skill(name, text, name.partition(":")[0] if ":" in name else "") for name, text in pairs)
 
 
@@ -226,17 +225,25 @@ def settings(data: Path) -> Settings:
     return found
 
 
+def project_listing(data: Path, cwd) -> Path:
+    """Where the last skill list that a session in the folder ``cwd`` saw is kept: a project can have skills of
+    its own."""
+    return data / "listings" / f"{decide.session_key(str(cwd or ''))}.json"
+
+
 def _listing(data: Path, payload: dict, state: dict) -> str | None:
-    """This session's newest skill list, else the one that a session before it saw: a session's first prompt
-    comes before its transcript."""
+    """This session's newest skill list, else the one that the last session in its folder saw: a session's first
+    prompt comes before its transcript holds a list."""
     transcript = payload.get("transcript_path")
     if isinstance(transcript, str) and transcript:
         content, state["offset"] = listing_in(Path(transcript), int(state.get("offset") or 0))
         if content is not None:
-            _write_json(data / "listing.json", {"content": content})
-            return content
-    cached = _read_json(data / "listing.json").get("content")
-    return cached if isinstance(cached, str) else None
+            state["listing"] = content
+            _write_json(project_listing(data, payload.get("cwd")), {"content": content})
+    for found in (state.get("listing"), _read_json(project_listing(data, payload.get("cwd"))).get("content")):
+        if isinstance(found, str):
+            return found
+    return None
 
 
 def _session(data: Path, payload: dict) -> tuple[str, Path]:
@@ -276,8 +283,9 @@ def on_prompt(payload: dict, data: Path, base: Path, s: Settings) -> dict | None
     _end_turn(data, key, state, s, "unknown")
     listed = _listing(data, payload, state)
     cwd = payload.get("cwd")
-    skills = catalog(None if listed is None else parse_listing(listed),
-                     disk_skills(base, Path(cwd) if isinstance(cwd, str) and cwd else None))
+    # without a list, no tip: a skill on disk can belong to a disabled plugin
+    skills = () if listed is None else catalog(parse_listing(listed),
+                                               disk_skills(base, Path(cwd) if isinstance(cwd, str) and cwd else None))
     candidates = rank(text, skills, block=s.block)  # no pins: Claude sees every skill anyway
     tipped = state.get("tipped") or []
     names = [n for n in pick(s, candidates) if n not in tipped]  # once per session: it stays in context
@@ -333,7 +341,7 @@ def main(argv: list[str]) -> int:
     base = config_dir()
     data = Path(os.environ.get("CLAUDE_PLUGIN_DATA") or base / "polymetis")
     if argv[:1] == ["report"]:  # /polymetis:report passes the data folder: a command gets no plugin variables
-        print(report.render(log.read((Path(argv[1]) if len(argv) > 1 else data) / log.NAME)))
+        print(report.render(log.read((Path(argv[1]) if len(argv) > 1 and argv[1] else data) / log.NAME)))
         return 0
     try:
         payload = json.loads(sys.stdin.buffer.read().decode("utf-8", "replace"))
