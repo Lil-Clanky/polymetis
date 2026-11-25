@@ -16,7 +16,7 @@ from typing import Any, Callable
 
 from . import decide, log, shape
 from .catalog import Skill, parse_index, text_of
-from .config import Settings, parse_settings
+from .config import LEVELS, Settings, parse_settings
 from .search import rank
 from .sessions import Session, Store, Turn
 
@@ -172,6 +172,9 @@ def on_pre_llm_call(session_id: str = "", turn_id: str = "", user_message: Any =
     if s.ablation_active() and not ablation_ready:
         _warn_once("ablation: restart Hermes to start it, the plugin adds what it needs when Hermes loads it")
     out = stale = None
+    # a chat with history that this process has not seen yet, as after a restart or with the CLI's --continue
+    earlier = log.last(log_path(), decide.session_key(session_id)) \
+        if is_first_turn is False and s.log and STORE.get(session_id) is None else None
     with STORE.lock:
         session = STORE.get(session_id)
         if session is not None and session.current is not None:  # Hermes ended that turn without on_session_end
@@ -187,6 +190,8 @@ def on_pre_llm_call(session_id: str = "", turn_id: str = "", user_message: Any =
                                                     model=model or "", arm=arm))
             if session.arm == "ablation":  # known before any index: the middleware removes it
                 session.level, session.level_reason = "none", "ablation"
+            elif earlier is not None:
+                _carry_on(session, earlier)
         elif session.arm and not s.ablation_active():  # it ended for both groups, and the skills come back
             if session.arm == "ablation":
                 session.level, session.level_reason = None, ""
@@ -323,6 +328,18 @@ def _finish(session: Session, turn: Turn, outcome: str, end: float | None = None
     session.current = None
     session.last_text, session.text = session.text, ""
     return _record(session, turn, _settings, outcome, end)
+
+
+def _carry_on(session: Session, record: dict) -> None:
+    """Go on with a chat from its last line in the log: its turn count, and its level unless that came from the
+    ablation arm, which a chat leaves when a new process first sees it. The log holds no text, so the repeat
+    check of the first turn has no message before it."""
+    if isinstance(record.get("turn"), int):
+        session.turns = record["turn"]
+    if record.get("level") in LEVELS and record.get("level_reason") != "ablation":
+        session.level, session.level_reason = record["level"], record.get("level_reason") or ""
+        session.upgraded = session.level_reason == "upgrade"
+        session.chosen = tuple(record.get("chosen") or ())
 
 
 @_safe

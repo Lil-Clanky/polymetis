@@ -82,7 +82,9 @@ Cheap first, all local, no extra model call:
 
 The level is sticky for the session, because the local request must stay fixed. One exception: a
 `none` session moves to `lean` once, on the first turn whose best score reaches `min_score`. That
-costs the local model one recomputation of its prompt.
+costs the local model one recomputation of its prompt. A chat that Hermes continues in a new process,
+after a restart or with the CLI's `--continue`, takes its turn count and level from its last line in
+the log; its ablation group is not carried over.
 
 Tips are per turn. A tip goes into the user message, which keeps the prompt cache, so each turn can
 name the skills that fit that turn.

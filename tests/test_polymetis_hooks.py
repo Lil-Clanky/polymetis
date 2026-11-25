@@ -182,6 +182,33 @@ def test_a_turn_with_an_image_gets_no_tip(pm, tmp_path):
     assert records(tmp_path)[1]["tip"] == ["github-pr-workflow"] and records(tmp_path)[1]["tip_given"] is False
 
 
+def continue_turn(text, *, session="s1"):
+    """The first turn that a new process of Hermes runs for a chat with history."""
+    return hooks.on_pre_llm_call(session_id=session, turn_id="t2", user_message=text, platform="cli", model="m",
+                                 conversation_history=[{"role": "user", "content": "earlier"}], is_first_turn=False)
+
+
+def test_a_chat_continued_in_a_new_process_keeps_its_turns_and_level(pm, tmp_path):
+    turn("Hello, how are you?")
+    turn("Draw some ascii art for me", first="Hello, how are you?")  # lean by the one upgrade
+    hooks.STORE.clear()  # a new process of Hermes, as after a restart or with the CLI's --continue
+    continue_turn("No, I meant a bigger cat")
+    hooks.on_session_end(session_id="s1", completed=True)
+    last = records(tmp_path)[-1]
+    assert (last["turn"], last["level"], last["level_reason"], last["chosen"], last["correction"]) == \
+        (3, "lean", "upgrade", ["ascii-art"], True)
+
+
+def test_a_chat_continued_in_a_new_process_leaves_its_ablation_group(pm, tmp_path):
+    pm["ablation.share"] = 1.0
+    turn("Please merge my pull request")
+    hooks.STORE.clear()
+    continue_turn("Please merge my pull request")
+    hooks.on_session_end(session_id="s1", completed=True)
+    last = records(tmp_path)[-1]
+    assert (last["turn"], last["arm"], last["level"]) == (2, None, "lean")
+
+
 def test_a_platform_level_wins(pm, tmp_path):
     pm["platform_levels"] = {"whatsapp": "full"}
     turn("Hello", platform="whatsapp")

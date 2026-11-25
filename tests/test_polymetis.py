@@ -408,6 +408,16 @@ def test_threads_that_rotate_at_once_move_only_full_files(tmp_path, monkeypatch)
     assert moved and min(moved) >= 2_000  # a small file moved over .1 throws away a full one
 
 
+def test_log_finds_the_last_record_of_a_session(tmp_path, monkeypatch):
+    monkeypatch.setattr(log, "MAX_BYTES", 120)
+    path = tmp_path / log.NAME
+    for i in range(4):
+        log.write(path, {"session": "aaa", "turn": i, "pad": "x" * 40})
+    log.write(path, {"session": "bbb", "turn": 9})  # moves the last records of aaa to the older file
+    assert log.last(path, "aaa")["turn"] == 3 and log.last(path, "bbb")["turn"] == 9
+    assert log.last(path, "ccc") is None and log.last(tmp_path / "missing.jsonl", "aaa") is None
+
+
 def test_reading_a_missing_log_is_empty(tmp_path):
     assert log.read(tmp_path / log.NAME) == []
 

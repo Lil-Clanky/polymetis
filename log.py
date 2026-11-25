@@ -11,7 +11,7 @@ NAME = "decisions.jsonl"
 _TEXT = (str, type(None))
 _COUNT = (int, float, type(None))
 # the fields the report reads, with the types Polymetis writes; a hand edit or an older format may differ
-_TYPES = {"time": (int, float), "session": _TEXT, "platform": _TEXT, "level": _TEXT, "local": _TEXT,
+_TYPES = {"time": (int, float), "session": _TEXT, "platform": _TEXT, "level": _TEXT, "level_reason": _TEXT, "local": _TEXT,
           "outcome": _TEXT, "tool_errors": _COUNT, "tokens_in": _COUNT, "tokens_out": _COUNT}
 _NAME_LISTS = ("answered_by", "tip", "chosen", "used_skills")
 # shortcut: guards the threads of one process; two Hermes processes on one profile can still rotate at the same
@@ -45,6 +45,26 @@ def _fits(record: dict) -> bool:
     return (all(isinstance(record[k], kinds) for k, kinds in _TYPES.items() if k in record)
             and all(isinstance(record.get(k) or [], list) and all(isinstance(n, str) for n in record.get(k) or [])
                     for k in _NAME_LISTS))
+
+
+def last(path: Path, session: str) -> dict | None:
+    """The newest record of a session in the log or its older file. Only the lines with the session's key are
+    parsed, so a new process finds quickly where a chat left off."""
+    needle = json.dumps({"session": session})[1:-1]  # the key as write() puts it in a line
+    for part in (path, path.with_name(path.name + ".1")):
+        try:
+            text = part.read_text(encoding="utf-8-sig", errors="replace")
+        except OSError:
+            continue
+        end = len(text)
+        while (at := text.rfind(needle, 0, end)) >= 0:
+            end = text.rfind("\n", 0, at) + 1  # the line's start, and the end of the next search
+            stop = text.find("\n", at)
+            with contextlib.suppress(ValueError):
+                record = json.loads(text[end:stop if stop >= 0 else None])
+                if isinstance(record, dict) and record.get("session") == session and _fits(record):
+                    return record
+    return None
 
 
 def read(path: Path) -> list[dict]:
