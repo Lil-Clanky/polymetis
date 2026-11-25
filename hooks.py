@@ -41,6 +41,7 @@ ablation_ready = False  # register() sets it when it added the llm_request middl
 _files_lock = threading.Lock()
 _saved: dict[Path, tuple] = {}  # the index last written to each file
 _TOOL_NAME = re.compile(r"[A-Za-z0-9_.:-]{1,64}")
+_REASON = re.compile(r"[a-z][a-z0-9_]*(?=\(|$)")  # Hermes's exit reasons are names; some add error text in brackets
 
 
 def configure(get_config: Callable[[str, Any], Any], data_dir: Callable[[], Path] | None = None) -> None:
@@ -165,7 +166,8 @@ def _search(s: Settings, session: Session, turn: Turn) -> None:
 
 @_safe
 def on_pre_llm_call(session_id: str = "", turn_id: str = "", user_message: Any = None, platform: str = "",
-                    model: str = "", is_first_turn: Any = None, parent_session_id: Any = "", **kwargs) -> dict | None:
+                    model: str = "", is_first_turn: Any = None, parent_session_id: Any = "",
+                    conversation_history: Any = None, **kwargs) -> dict | None:
     if not session_id:
         return None
     s = _refresh_settings()
@@ -205,8 +207,12 @@ def on_pre_llm_call(session_id: str = "", turn_id: str = "", user_message: Any =
         turn.correction = session.turns > 1 and decide.is_correction(text)
         turn.repeat = decide.is_repeat(session.last_text, text)
         _search(s, session, turn)
-        # a message with parts, such as an image, would keep the hint in what the user sees
-        if "tips" in s.apply and turn.tip and session.arm != "ablation" and isinstance(user_message, str):
+        # a message with parts, such as an image, would keep the hint in what the user sees; Hermes passes the
+        # typed text as user_message, and the message itself as the last one of the history
+        message = conversation_history[-1] if isinstance(conversation_history, list) and conversation_history else {}
+        parts = message.get("content") if isinstance(message, dict) and message.get("role") == "user" else None
+        if "tips" in s.apply and turn.tip and session.arm != "ablation" and isinstance(user_message, str) \
+                and not isinstance(parts, list):
             turn.tip_given = True
             out = {"context": decide.hint(turn.tip)}
     if stale is not None and s.log:
@@ -217,15 +223,16 @@ def on_pre_llm_call(session_id: str = "", turn_id: str = "", user_message: Any =
 @_safe
 def on_pre_api_request(session_id: str = "", turn_id: str = "", platform: str = "", model: str = "",
                        provider: str = "", system_prompt: Any = None, request_messages: Any = None,
-                       request: Any = None, tool_count: Any = None, **kwargs) -> None:
+                       request: Any = None, tool_count: Any = None, api_call_count: Any = None, **kwargs) -> None:
     session = STORE.get(session_id) if session_id else None
     turn = _turn(session, turn_id)
     if turn is None:  # between turns, or a request of the background review
         return
-    found = parse_index(text_of(system_prompt))
-    # a request without an index means a session without skills, as with Hermes's skills toolset off, except
-    # in the ablation arm, where Polymetis removed the index itself
-    known = found is not None or session.arm != "ablation"
+    # Polymetis removed the index from the ablation arm's requests itself, so what is left there is no index, even
+    # an example in a context file. Any other request without an index means a session without skills, as with
+    # Hermes's skills toolset off.
+    known = session.arm != "ablation"
+    found = parse_index(text_of(system_prompt)) if known else None
     body = request.get("body") if isinstance(request, dict) else None
     body = body if isinstance(body, dict) else {}
     config = body.get("toolConfig")
@@ -236,7 +243,8 @@ def on_pre_api_request(session_id: str = "", turn_id: str = "", platform: str = 
             session.catalog = tuple(found or ())
         STORE.remember_request(request_messages, session_id)
         turn.seen = time.monotonic()
-        turn.api_calls += 1
+        # Hermes's number of the request in the turn, which its retries, fallbacks and compressions keep
+        turn.api_calls = max(turn.api_calls, api_call_count) if isinstance(api_call_count, int) else turn.api_calls + 1
         turn.offered_skills = len(found) if found is not None else 0
         # the request's own tools, after any middleware; tool_count, Hermes's count of the agent's tools,
         # for a request Hermes passes on only in short form
@@ -364,28 +372,28 @@ def on_session_end(session_id: str = "", turn_id: str = "", completed: Any = Non
         if turn.failed and not completed:  # Hermes gave up on its request, or stopped while it waited to retry
             outcome = "failed"
         else:
+            name = _REASON.match(turn_exit_reason) if isinstance(turn_exit_reason, str) else None
+            # the reason's name only: its error text can quote a message
             outcome = ("interrupted" if interrupted else "failed" if failed else "completed" if completed
-                       else str(turn_exit_reason or "unknown"))
+                       else name.group(0) if name else "unknown")
         record = _finish(session, turn, outcome)
     if _settings.log:
         log.write(log_path(), record)
 
 
 @_safe
-def on_exit() -> None:
-    """At the exit of Hermes's process: the turns it left in progress, such as one that waits to retry a request."""
-    if not STORE.lock.acquire(timeout=2):  # a thread that holds the lock must not hold up the exit
-        return
-    try:
-        records = []
-        for session in STORE.all():
-            if (turn := session.current) is not None:
-                records.append(_finish(session, turn, "failed" if turn.failed else "interrupted", end=turn.seen))
-    finally:
-        STORE.lock.release()
+def on_session_finalize(session_id: str = "", **kwargs) -> None:
+    """Hermes closes a session: at the end of a one-shot run, when the CLI or a chat client exits, at ``/new``, and
+    for the sessions still busy when the gateway stops. The turn it left in progress gets its line here, such as
+    one that failed for good or waits to retry a request. Hermes ends its processes past ``atexit``."""
+    session = STORE.get(session_id) if session_id else None
+    with STORE.lock:
+        turn = session.current if session is not None else None
+        if turn is None:
+            return
+        record = _finish(session, turn, "failed" if turn.failed else "interrupted", end=turn.seen)
     if _settings.log:
-        for record in records:
-            log.write(log_path(), record)
+        log.write(log_path(), record)
 
 
 @_safe
@@ -398,6 +406,7 @@ def on_post_compaction(session_id: str = "", old_session_id: str = "", **kwargs)
         session = STORE.get(old_session_id)
         if session is not None and STORE.get(session_id) is None:
             STORE.add(session_id, session)
+            session.key = decide.session_key(session_id)  # a new process goes on with the chat under its newest id
 
 
 @_safe

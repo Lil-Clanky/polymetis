@@ -77,11 +77,6 @@ class Store:
                 self._sessions.popitem(last=False)
             return session
 
-    def all(self) -> list[Session]:
-        """Every session, once, also when a compression gave it a second id."""
-        with self.lock:
-            return list({id(s): s for s in self._sessions.values()}.values())
-
     def remember_request(self, messages, session_id: str) -> None:
         key = fingerprint(messages)
         if key is None:

@@ -7,4 +7,4 @@ author: Lil-Clanky
 manifest_version: 2
 api_version: 1
 provides_hooks: [pre_llm_call, pre_api_request, post_api_request, api_request_error, pre_tool_call, post_tool_call,
-  on_session_end, post_compaction]
+  on_session_end, on_session_finalize, post_compaction]

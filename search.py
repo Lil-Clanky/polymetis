@@ -69,7 +69,8 @@ class Index:
         out = []
         for doc, length in zip(self.docs, self.lengths):
             norm = K1 * (1 - B + B * length / (self.avg or 1.0))
-            out.append(sum(self.idf[t] * doc[t] * (K1 + 1) / (doc[t] + norm) for t in terms if t in doc))
+            # over the skill's few words, not the query's: a pasted log has many thousands
+            out.append(sum(self.idf[t] * n * (K1 + 1) / (n + norm) for t, n in doc.items() if t in terms))
         return out
 
 

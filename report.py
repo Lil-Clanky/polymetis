@@ -40,7 +40,8 @@ def _ablation(all_records, now: float) -> list[str]:
            else f"no ablation in the last {ABLATION_EVERY_DAYS} days")
     return ["", f"Proposal: run an ablation week ({why}). A quarter of new sessions then runs without skills,",
             "and this report compares both groups. Set it with this command, then restart Hermes or the gateway:",
-            f"  hermes config set plugins.entries.polymetis.settings.ablation '{{share: 0.25, until: {until}}}'"]
+            # the date in quotes: Hermes copies its config through JSON for every new session, and a YAML date breaks that
+            f"  hermes config set plugins.entries.polymetis.settings.ablation '{{share: 0.25, until: \"{until}\"}}'"]
 
 
 def _compare(records) -> list[str]:

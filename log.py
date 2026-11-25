@@ -69,12 +69,15 @@ def last(path: Path, session: str) -> dict | None:
 
 def read(path: Path) -> list[dict]:
     """Every record of the log and its older file, oldest first. Lines that do not parse, or whose fields
-    have other types than Polymetis writes, are skipped. A file that exists but cannot be read raises OSError."""
+    have other types than Polymetis writes, are skipped. A log that exists but cannot be read raises OSError;
+    an older file that cannot be read is left out."""
     records = []
     for part in (path.with_name(path.name + ".1"), path):
         try:
             lines = part.read_text(encoding="utf-8-sig", errors="replace").splitlines()
-        except FileNotFoundError:
+        except OSError as e:
+            if part == path and not isinstance(e, FileNotFoundError):
+                raise
             continue
         for line in lines:
             with contextlib.suppress(ValueError):

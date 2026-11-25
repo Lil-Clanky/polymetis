@@ -111,7 +111,7 @@ def parse_settings(get: Callable[[str, Any], Any]) -> tuple[Settings, list[str]]
     values, problems = {}, []
     ablation = _read(get, "ablation")
     if ablation is not None and not (isinstance(ablation, dict) and set(ablation) <= {"share", "until"}):
-        problems.append("ablation: expected share and until under it, as in {share: 0.25, until: 2026-12-31}; "
+        problems.append('ablation: expected share and until under it, as in {share: 0.25, until: "2026-12-31"}; '
                         "no ablation runs")
     for key, parse in _PARSERS.items():
         raw = _read(get, key)

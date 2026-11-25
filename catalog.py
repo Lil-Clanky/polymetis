@@ -19,7 +19,7 @@ HINT = re.compile(r"(?<!\n)\n*<skill-hint>Relevant skills?: [^<\n]*\. Load one w
 # A match may start only where a sentence can, at a line's start or after ". ": without that anchor the
 # leading [^.\n]* is tried at every position of a long line, which is quadratic.
 _SENTENCE = r"(?:^|(?<=\n)|(?<=\.[ \t]))[^.\n]*{}[^.\n]*\.?[ \t]?"
-POINTER = re.compile(_SENTENCE.format(r"\bskill_view\([^)]*\)"))
+POINTER = re.compile(_SENTENCE.format(r"\bskill_view\([^)\n]*\)"))  # a call on one line: [^)]* ate the lines after
 MANAGE = re.compile(_SENTENCE.format(r"\bskill_manage\b"))
 
 
@@ -46,18 +46,7 @@ def text_of(content) -> str:
     return ""
 
 
-def _block(text: str) -> tuple[int, int] | None:
-    start = text.find(OPEN)
-    end = text.find(CLOSE, start)
-    return (start, end + len(CLOSE)) if start >= 0 and end >= 0 else None
-
-
-def parse_index(system_text: str) -> list[Skill] | None:
-    """The skills in the index, or None when the prompt has no index."""
-    span = _block(system_text or "")
-    if span is None:
-        return None
-    body = system_text[span[0] + len(OPEN):span[1] - len(CLOSE)]
+def _skills(body: str) -> list[Skill]:
     skills, category = [], ""
     for line in body.splitlines():
         row = line.strip()
@@ -72,6 +61,33 @@ def parse_index(system_text: str) -> list[Skill] | None:
             skills += [Skill(n.strip(), "", category.strip()) for n in names.split(",") if n.strip()]
             category = ""
     return list({s.name: s for s in skills}.values())
+
+
+def _block(text: str) -> tuple[int, int] | None:
+    """The span of Hermes's index. Context files come before it in the system prompt and memory after it, and
+    either may mention its tags: a block counts only with its opening tag at the start of a line and no other
+    opening tag inside, and of several, the one with the most skills wins.
+    shortcut: of equal ones the last, as context files are more likely to hold an example; an example longer than
+    the real index wins, revisit if one shows up"""
+    best, start, end = None, text.find(OPEN), -1
+    while start >= 0:
+        if end < start:  # each search goes forward only, so many tags take linear time
+            end = text.find(CLOSE, start)
+            if end < 0:
+                break
+        after = text.find(OPEN, start + 1)
+        if (after < 0 or after > end) and (start == 0 or text[start - 1] == "\n"):
+            size = len(_skills(text[start + len(OPEN):end]))
+            if best is None or size >= best[0]:
+                best = (size, start, end + len(CLOSE))
+        start = after
+    return best[1:] if best else None
+
+
+def parse_index(system_text: str) -> list[Skill] | None:
+    """The skills in the index, or None when the prompt has no index."""
+    span = _block(system_text or "")
+    return None if span is None else _skills(system_text[span[0] + len(OPEN):span[1] - len(CLOSE)])
 
 
 def _without_block(text: str) -> str:

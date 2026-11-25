@@ -145,7 +145,7 @@ last one.
 
 `decisions.jsonl` in the plugin's data folder (`<HERMES_HOME>/plugin-data/agent-plugin-polymetis-1717164d/`), mode 0600,
 one line per turn, written at `on_session_end`, or for a turn that Hermes ends without it, at the session's
-next turn or at the process's exit, rotated
+next turn or at `on_session_finalize` (Hermes ends its processes with `os._exit`, past `atexit`), rotated
 to `decisions.jsonl.1` above 5 MB. It holds names, numbers and reasons,
 never message text:
 

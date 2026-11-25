@@ -1,5 +1,4 @@
 import argparse
-import atexit
 import hashlib
 import io
 import json
@@ -167,7 +166,8 @@ def test_the_ablation_arm_keeps_the_saved_index(pm, tmp_path):
     turn("Please merge my pull request")
     pm["ablation.share"] = 1.0
     out = start("Please merge my pull request", session="s2")
-    api(messages("Please merge my pull request", catalog.strip_skills(INDEX)), session="s2")  # as the middleware sends it
+    example = "<available_skills>\n  - zz-example: from a context file\n</available_skills>\n\n"
+    api(messages("Please merge my pull request", example + catalog.strip_skills(INDEX)), session="s2")  # as the middleware sends it
     hooks.on_session_end(session_id="s2", completed=True)
     assert records(tmp_path)[1]["arm"] == "ablation" and out is None and len(hooks.catalogs()["cli"]) == 5
 
@@ -180,6 +180,10 @@ def test_a_turn_with_an_image_gets_no_tip(pm, tmp_path):
     assert start(image, session="s2") is None  # Hermes would keep the hint in the message the user sees
     hooks.on_session_end(session_id="s2", completed=True)
     assert records(tmp_path)[1]["tip"] == ["github-pr-workflow"] and records(tmp_path)[1]["tip_given"] is False
+    # Hermes passes the typed text only; the message with its image is the last one of the history
+    assert hooks.on_pre_llm_call(session_id="s3", turn_id="t", user_message="Please merge my pull request",
+                                 platform="cli", model="m", conversation_history=[{"role": "user", "content": image}],
+                                 is_first_turn=True) is None
 
 
 def continue_turn(text, *, session="s1"):
@@ -204,6 +208,7 @@ def test_a_chat_continued_in_a_new_process_leaves_its_ablation_group(pm, tmp_pat
     turn("Please merge my pull request")
     hooks.STORE.clear()
     continue_turn("Please merge my pull request")
+    api(messages("Please merge my pull request"))  # the first request with an index decides the level
     hooks.on_session_end(session_id="s1", completed=True)
     last = records(tmp_path)[-1]
     assert (last["turn"], last["arm"], last["level"]) == (2, None, "lean")
@@ -245,6 +250,38 @@ def test_a_turn_that_fails_at_the_provider_is_logged_when_the_next_turn_starts(p
     assert second["time"] - first["time"] >= 3600
 
 
+def test_a_failed_turn_is_logged_when_hermes_closes_the_session(pm, tmp_path, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(hooks.time, "monotonic", lambda: clock[0])
+    start("Please merge my pull request")
+    clock[0] += 2
+    fail(retryable=False, retry_count=3, max_retries=3)  # Hermes gives up and ends the turn without on_session_end
+    clock[0] += 60
+    hooks.on_session_finalize(session_id="s1", platform="cli", reason="shutdown")  # as at the end of a one-shot run
+    assert [(r["turn"], r["outcome"], r["duration_ms"]) for r in records(tmp_path)] == [(1, "failed", 2000)]
+    turn("Merge the other pull request too")  # a chat client closed, and the next one goes on with the chat
+    assert records(tmp_path)[-1]["turn"] == 2
+
+
+def test_api_calls_counts_hermes_requests_and_not_their_retries(pm, tmp_path):
+    start("Please merge my pull request")
+    for number, retry in ((1, 0), (1, 1), (1, 0), (2, 0)):  # a retry, then a fallback, of the first request
+        hooks.on_pre_api_request(session_id="s1", turn_id="t", system_prompt=INDEX, request_messages=messages("hi"),
+                                 request={"body": {"tools": TOOLS}}, api_call_count=number, retry_count=retry)
+    hooks.on_session_end(session_id="s1", completed=True)
+    assert records(tmp_path)[0]["api_calls"] == 2
+
+
+@pytest.mark.parametrize("reason, outcome", [
+    (f"error_near_max_iterations(Error during API call #9: my PIN is {SECRET})", "error_near_max_iterations"),
+    ("max_iterations_reached(30/30)", "max_iterations_reached"), ("guardrail_halt", "guardrail_halt"),
+    (f"{SECRET} adapter lost without reconnection queue", "unknown"), (None, "unknown")])
+def test_the_outcome_keeps_only_the_name_of_hermes_exit_reason(pm, tmp_path, reason, outcome):
+    start("Please merge my pull request")
+    hooks.on_session_end(session_id="s1", completed=False, failed=False, interrupted=False, turn_exit_reason=reason)
+    assert records(tmp_path)[0]["outcome"] == outcome
+
+
 def test_a_request_that_succeeds_after_an_error_leaves_the_turn_completed(pm, tmp_path):
     start("Please merge my pull request")
     fail(retryable=True)
@@ -260,13 +297,13 @@ def test_hermes_closing_after_a_failed_request_logs_the_turn_as_failed(pm, tmp_p
     assert records(tmp_path)[0]["outcome"] == "failed"
 
 
-def test_hermes_stopping_writes_the_turns_in_progress(pm, tmp_path):
+def test_hermes_closing_its_sessions_writes_the_turns_in_progress(pm, tmp_path):
     start("Please merge my pull request", session="waiting")
-    fail(session="waiting", retryable=True)  # Hermes stops while it waits to retry
+    fail(session="waiting", retryable=True)  # the gateway stops while Hermes waits to retry
     start("Draw some ascii art", session="busy")
     hooks.on_post_compaction(session_id="busy-2", old_session_id="busy")  # one session under two ids
-    hooks.on_exit()
-    hooks.on_exit()  # a second call finds nothing left
+    for session in ("waiting", "busy-2", "busy"):  # the last finds nothing left
+        hooks.on_session_finalize(session_id=session, platform="gateway", reason="shutdown")
     assert sorted(r["outcome"] for r in records(tmp_path)) == ["failed", "interrupted"]
     hooks.on_session_end(session_id="busy", completed=True)  # a late end of a turn already written
     assert len(records(tmp_path)) == 2
@@ -293,6 +330,7 @@ def test_an_ablation_ends_with_its_settings_for_both_groups(pm, tmp_path, share,
     start("Merge the other pull request too")
     request = {"model": "m", "messages": messages("hi"), "tools": TOOLS}
     assert hooks.on_llm_request(request=request, session_id="s1", turn_id="t") is None
+    api(messages("Merge the other pull request too"))  # the skills are back, and their index decides the level
     hooks.on_session_end(session_id="s1", completed=True)
     assert [(r["arm"], r["level"]) for r in records(tmp_path)] == [group, (None, "lean")]
 
@@ -338,8 +376,19 @@ def test_a_session_keeps_its_group_when_a_compression_gives_it_a_new_id(pm, tmp_
                           model="m", is_first_turn=False)
     hooks.on_session_end(session_id="s2", turn_id="t2", completed=True)
     first, second = records(tmp_path)
-    assert (first["arm"], second["arm"], second["turn"], second["session"]) == ("ablation", "ablation", 2,
-                                                                                 first["session"])
+    assert (first["arm"], second["arm"], second["turn"]) == ("ablation", "ablation", 2)
+    assert second["session"] == decide.session_key("s2")  # the id that a new process continues the chat under
+
+
+def test_a_chat_continued_after_a_compression_gave_it_a_new_id_keeps_its_turns(pm, tmp_path):
+    turn("Please merge my pull request")
+    start("Merge the other pull request too")
+    hooks.on_post_compaction(session_id="s1-b", old_session_id="s1")
+    hooks.on_session_end(session_id="s1-b", turn_id="t", completed=True)
+    hooks.STORE.clear()  # a restart; the CLI's --continue goes on with the chat's newest id
+    continue_turn("And now the third one", session="s1-b")
+    hooks.on_session_end(session_id="s1-b", completed=True)
+    assert [(r["turn"], r["level"]) for r in records(tmp_path)] == [(1, "lean"), (2, "lean"), (3, "lean")]
 
 
 def test_an_ablation_set_while_hermes_runs_waits_for_a_restart(pm, tmp_path, monkeypatch, caplog):
@@ -566,13 +615,10 @@ class FakeCtx:
 def test_register_wires_the_hooks_the_manifest_names(tmp_path, monkeypatch):
     for name in ("_get_config", "_data_dir", "_settings", "ablation_ready"):
         monkeypatch.setattr(hooks, name, getattr(hooks, name))  # register sets them; the test puts them back
-    at_exit = []  # not the real atexit: at the end of the tests it would write to the default Hermes folder
-    monkeypatch.setattr(atexit, "register", at_exit.append)
-    monkeypatch.setattr(atexit, "unregister", lambda fn: at_exit.remove(fn) if fn in at_exit else None)
     ctx = FakeCtx(tmp_path / "pd")
     polymetis.register(ctx)
     polymetis.register(ctx)  # Hermes loads the plugin again
-    assert at_exit == [hooks.on_exit]
+    assert ctx.hooks["on_session_finalize"] is hooks.on_session_finalize  # Hermes ends its processes past atexit
     manifest = yaml.safe_load((Path(polymetis.__file__).parent / "plugin.yaml").read_text(encoding="utf-8"))
     assert sorted(ctx.hooks) == sorted(set(manifest["provides_hooks"]) - {"pre_tool_call"})  # for an ablation only
     assert ctx.middleware == {} and hooks.ablation_ready is False  # Hermes copies every request while one is registered
@@ -603,6 +649,16 @@ def test_cli_report(pm, tmp_path):
     assert "Polymetis report, last 7 days: 1 session, 1 turn." in text
     assert "Most loaded skills: github-pr-workflow 1." in text
     assert text.endswith(f"Log: {tmp_path / 'data' / log.NAME}\n")
+
+
+def test_cli_report_reads_the_log_when_its_older_file_cannot_be_read(pm, tmp_path):
+    turn("Please merge my pull request")
+    (tmp_path / "data" / (log.NAME + ".1")).mkdir()  # unreadable as a file on every system
+    parser = argparse.ArgumentParser()
+    cli.setup_parser(parser)
+    out = io.StringIO()
+    assert cli.handle(parser.parse_args(["report"]), out=out) == 0
+    assert "1 session, 1 turn." in out.getvalue()
 
 
 def test_cli_report_says_when_it_cannot_read_the_log(pm, tmp_path):
