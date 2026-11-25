@@ -47,9 +47,10 @@ def messages(text, system=INDEX):
 
 
 def api(msgs, *, session="s1", platform="cli", tools=TOOLS):
+    body = {"model": "m"} if tools is None else {"model": "m", "tools": tools}  # Hermes leaves out an empty list
     hooks.on_pre_api_request(session_id=session, platform=platform, model="m", provider="p",
                              system_prompt=msgs[0]["content"], request_messages=msgs,
-                             request={"method": "POST", "body": {"model": "m", "tools": tools}}, tool_count=len(tools))
+                             request={"method": "POST", "body": body}, tool_count=len(tools or []))
     hooks.on_post_api_request(session_id=session, response_model="m-answered",
                               response={"usage": {"prompt_tokens": 120, "total_tokens": 150}})
 
@@ -721,12 +722,13 @@ def test_a_session_without_any_index_is_logged_as_having_none(pm, tmp_path):
     assert (records(tmp_path)[0]["level"], records(tmp_path)[0]["level_reason"]) == ("none", "no_index")
 
 
-NO_SKILL_TOOLS = [t for t in TOOLS if shape.tool_name(t) not in ("skills_list", "skill_view", "skill_manage")]
+NO_SKILL_TOOLS = [t for t in TOOLS if shape.tool_name(t) not in shape.SKILL_TOOLS]
 
 
-def test_a_skills_section_in_a_request_without_skill_tools_is_no_index(pm, tmp_path):
+@pytest.mark.parametrize("tools", [NO_SKILL_TOOLS, [], None])
+def test_a_skills_section_in_a_request_without_skill_tools_is_no_index(pm, tmp_path, tools):
     # with skills off, such a section comes from a context file or memory: Hermes adds its own only with a skill tool
-    turn("Please merge my pull request", tools=NO_SKILL_TOOLS)
+    turn("Please merge my pull request", tools=tools)
     rec = records(tmp_path)[0]
     assert (rec["level"], rec["level_reason"], rec["offered_skills"]) == ("none", "no_index", 0)
 
@@ -734,6 +736,7 @@ def test_a_skills_section_in_a_request_without_skill_tools_is_no_index(pm, tmp_p
 @pytest.mark.parametrize("tools", [
     NO_SKILL_TOOLS[:3] + [{"_truncated_items": 40}],  # Hermes cut the list short
     [{"functionDeclarations": [{"name": "terminal"}]}],  # names in a form Polymetis does not read
+    [{"functionDeclarations": [{"name": "skill_view"}]}] + NO_SKILL_TOOLS[:2],  # a skill tool among them
 ])
 def test_the_index_stays_when_the_tools_cannot_tell(pm, tmp_path, tools):
     turn("Please merge my pull request", tools=tools)
